@@ -15,16 +15,16 @@ fn temp_dir(tag: &str) -> PathBuf {
 #[test]
 fn second_opener_is_refused_until_the_first_lets_go() {
     let dir = temp_dir("twice");
-    let first = LibraryLock::acquire(&dir, "LightCraft").unwrap();
+    let first = LibraryLock::acquire(&dir, "Ubunye Light").unwrap();
     assert!(first.held());
     let owner: LockOwner = serde_json::from_slice(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
-    assert_eq!((owner.pid, owner.program.as_str()), (std::process::id(), "LightCraft"));
+    assert_eq!((owner.pid, owner.program.as_str()), (std::process::id(), "Ubunye Light"));
 
     let e = LibraryLock::acquire(&dir, "lightcraft-cli").unwrap_err();
     let LockError::InUse(Some(who)) = &e else { panic!("{e:?}") };
     assert_eq!(who.pid, std::process::id());
     let msg = e.to_string();
-    assert!(msg.contains("already open in LightCraft") && msg.contains(&format!("process {}", std::process::id())), "{msg}");
+    assert!(msg.contains("already open in Ubunye Light") && msg.contains(&format!("process {}", std::process::id())), "{msg}");
 
     drop(first);
     assert!(!dir.join(OWNER).exists(), "the owner note goes with the lock");
@@ -40,8 +40,8 @@ fn second_opener_is_refused_until_the_first_lets_go() {
 fn leftover_lock_files_are_not_a_lock() {
     let dir = temp_dir("stale");
     std::fs::write(dir.join(LOCK), b"").unwrap();
-    std::fs::write(dir.join(OWNER), br#"{"pid":999999,"host":"elsewhere","program":"LightCraft","version":"0.2.0","since":1}"#).unwrap();
-    let l = LibraryLock::acquire(&dir, "LightCraft").unwrap();
+    std::fs::write(dir.join(OWNER), br#"{"pid":999999,"host":"elsewhere","program":"Ubunye Light","version":"0.2.0","since":1}"#).unwrap();
+    let l = LibraryLock::acquire(&dir, "Ubunye Light").unwrap();
     assert!(l.held());
     let owner: LockOwner = serde_json::from_slice(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
     assert_eq!(owner.pid, std::process::id(), "the note now names this process");
@@ -67,7 +67,7 @@ fn lock_held_by_another_process_is_released_when_it_dies() {
         assert!(std::time::Instant::now() < deadline, "child never locked");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    let e = LibraryLock::acquire(&dir, "LightCraft").unwrap_err();
+    let e = LibraryLock::acquire(&dir, "Ubunye Light").unwrap_err();
     let LockError::InUse(Some(who)) = &e else { panic!("{e:?}") };
     assert_eq!(who.pid, child.id());
     assert!(e.to_string().contains("on this computer") || who.host.is_empty(), "{e}");
@@ -75,7 +75,7 @@ fn lock_held_by_another_process_is_released_when_it_dies() {
     child.kill().unwrap(); // SIGKILL: no clean-up runs, like a crash
     child.wait().unwrap();
     assert!(dir.join(OWNER).exists(), "the crashed holder's note is left behind");
-    let l = LibraryLock::acquire(&dir, "LightCraft").expect("the OS released the dead process's lock");
+    let l = LibraryLock::acquire(&dir, "Ubunye Light").expect("the OS released the dead process's lock");
     assert!(l.held());
     drop(l);
     let _ = std::fs::remove_dir_all(&dir);

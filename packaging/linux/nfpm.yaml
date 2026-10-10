@@ -13,12 +13,12 @@ release: 1
 section: graphics
 priority: optional
 maintainer: ${LIGHTCRAFT_MAINTAINER}
-vendor: Learning Machines LLC
-homepage: https://getartcraft.com/apps/lightcraft
+vendor: Ubunye AI Ecosystems
+homepage: https://www.thabangvision.com/tools/light
 license: MIT OR Apache-2.0
 description: |-
   Open-source, native photo library and raw developer that works the way
-  Lightroom users expect. Import, rate, keyword and organise photos; develop
+  Lightroom users expect. Based on LightCraft by the ArtCraft team. Import, rate, keyword and organise photos; develop
   raw files non-destructively with exposure, tone, color grading, masks and
   presets; GPU processing (wgpu). Includes lightcraft-cli, a headless renderer
   and command runner.

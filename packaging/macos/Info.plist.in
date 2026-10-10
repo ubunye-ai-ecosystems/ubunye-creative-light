@@ -7,13 +7,13 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>LightCraft</string>
+  <string>Ubunye Light</string>
   <key>CFBundleName</key>
-  <string>LightCraft</string>
+  <string>Ubunye Light</string>
   <key>CFBundleExecutable</key>
   <string>LightCraft</string>
   <key>CFBundleIdentifier</key>
-  <string>ai.storyteller.lightcraft</string>
+  <string>org.ubunye.creative.light</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundlePackageType</key>
@@ -43,16 +43,16 @@
   <key>NSRequiresAquaSystemAppearance</key>
   <false/>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright © the LightCraft authors. MIT OR Apache-2.0.</string>
+  <string>Copyright © the LightCraft authors and Ubunye AI Ecosystems. MIT OR Apache-2.0.</string>
 
   <!-- Lightcraft's own format. -->
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>
       <key>UTTypeIdentifier</key>
-      <string>ai.storyteller.lightcraft.document</string>
+      <string>org.ubunye.creative.light.document</string>
       <key>UTTypeDescription</key>
-      <string>LightCraft Document</string>
+      <string>Ubunye Light Document</string>
       <key>UTTypeConformsTo</key>
       <array>
         <string>public.data</string>
@@ -90,7 +90,7 @@
     </dict>
     <dict>
       <key>UTTypeIdentifier</key>
-      <string>ai.storyteller.lightcraft.qoi</string>
+      <string>org.ubunye.creative.light.qoi</string>
       <key>UTTypeDescription</key>
       <string>QOI Image</string>
       <key>UTTypeConformsTo</key>

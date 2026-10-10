@@ -535,7 +535,7 @@ fn snapshot_leaves_desktop_gpu_preferences_untouched() {
     session.open_library(&library, true).unwrap();
     drop(session);
     let config = dir.join("config");
-    let app_config = config.join("lightcraft");
+    let app_config = config.join(lightcraft_engine::brand::APP_ID);
     std::fs::create_dir_all(&app_config).unwrap();
     let ui_path = app_config.join("ui.json");
     let mut ui = lightcraft_ui_egui::UiState::default();

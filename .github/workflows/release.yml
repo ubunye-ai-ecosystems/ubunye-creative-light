@@ -221,12 +221,12 @@ jobs:
           dpkg-deb --info dist/release/*.deb
           dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/lightcraft$|metainfo|applications'
           ldd target/release/lightcraft
-          python3 -c "import yaml; m = yaml.safe_load(open('packaging/linux/flatpak/ai.storyteller.lightcraft.yml')); assert m['id'] == 'ai.storyteller.lightcraft'"
+          python3 -c "import yaml; m = yaml.safe_load(open('packaging/linux/flatpak/org.ubunye.creative.light.yml')); assert m['id'] == 'org.ubunye.creative.light'"
           for appimage in dist/release/*.AppImage; do
             chmod +x "$appimage"
             APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
             # Update information is embedded, and the .zsync for delta updates sits beside it.
-            "$appimage" --appimage-updateinformation | grep -F 'gh-releases-zsync|'
+            "$appimage" --appimage-updateinformation | grep -F 'zsync|https://downloads.thabangvision.com/light/stable/'
             test -s "$appimage.zsync"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

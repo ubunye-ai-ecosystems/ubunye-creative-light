@@ -1,52 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  LightCraft MSI (WiX Toolset v5: `dotnet tool install -g wix`, plus the UI and Util extensions:
+  Ubunye Light MSI (WiX Toolset v5: `dotnet tool install -g wix`, plus the UI and Util extensions:
   `wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2`). Built by package.ps1:
 
     wix build lightcraft.wxs -arch x64 -ext WixToolset.UI.wixext/5.0.2 -ext WixToolset.Util.wixext/5.0.2
       -d Version=1.2.3 -d BinDir=... -d IconPath=... -d UiDialogBmp=... -d UiBannerBmp=... -o out.msi
 
   Per-machine install into Program Files (or the folder chosen in the installer, or
-  `INSTALLFOLDER=...` on the msiexec command line; upgrades keep it), a Start Menu shortcut, `.pcraft` owned by LightCraft,
-  and LightCraft offered under "Open with" for PSD/PSB and the image formats it reads (without
+  `INSTALLFOLDER=...` on the msiexec command line; upgrades keep it), a Start Menu shortcut, `.pcraft` owned by Ubunye Light,
+  and Ubunye Light offered under "Open with" for PSD/PSB and the image formats it reads (without
   taking over the user's default app for them).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
-      Name="LightCraft"
-      Manufacturer="Learning Machines LLC"
+      Name="Ubunye Light"
+      Manufacturer="Ubunye AI Ecosystems"
       Version="$(var.Version)"
-      UpgradeCode="229BB552-5EFD-479A-BA86-8CB6D926390C"
+      UpgradeCode="9210D947-FF7A-4C2A-817A-EE355C6A0E4F"
       Scope="perMachine"
       Compressed="yes"
       Language="1033">
-    <SummaryInformation Description="LightCraft photo library and raw developer" Manufacturer="Learning Machines LLC" />
+    <SummaryInformation Description="Ubunye Light photo library and raw developer" Manufacturer="Ubunye AI Ecosystems" />
     <!-- Same-version upgrades let successive pre-releases of one X.Y.Z replace each other
          (MSI versions are numeric, so 1.2.3-rc.1 and 1.2.3-rc.2 are both 1.2.3). -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"
-        DowngradeErrorMessage="A newer version of LightCraft is already installed." />
+        DowngradeErrorMessage="A newer version of Ubunye Light is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="LightcraftIcon.ico" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="LightcraftIcon.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://getartcraft.com/apps/lightcraft" />
-    <Property Id="ARPURLUPDATEINFO" Value="https://getartcraft.com/apps/lightcraft" />
-    <Property Id="ARPHELPLINK" Value="https://discord.gg/artcraft" />
+    <Property Id="ARPURLINFOABOUT" Value="https://www.thabangvision.com/tools/light" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://downloads.thabangvision.com/light/stable/" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="LightCraft" />
+      <Directory Id="INSTALLFOLDER" Name="Ubunye Light" />
     </StandardDirectory>
     <!-- The folder of the installed version (written by LightcraftApp), so an upgrade installs
          where the user chose instead of moving back to Program Files (issue #399). Searched into
          its own property: AppSearch would otherwise overwrite INSTALLFOLDER=... given to msiexec. -->
     <Property Id="PREVIOUSINSTALLFOLDER">
-      <RegistrySearch Id="PreviousInstallFolder" Root="HKLM" Key="Software\LightCraft" Name="InstallFolder" Type="raw" />
+      <RegistrySearch Id="PreviousInstallFolder" Root="HKLM" Key="Software\Ubunye AI Ecosystems\Ubunye Light" Name="InstallFolder" Type="raw" />
     </Property>
     <SetProperty Id="INSTALLFOLDER" Value="[PREVIOUSINSTALLFOLDER]" After="AppSearch" Sequence="both"
         Condition="PREVIOUSINSTALLFOLDER AND NOT INSTALLFOLDER" />
     <StandardDirectory Id="ProgramMenuFolder" />
 
-    <Feature Id="Main" Title="LightCraft" Level="1">
+    <Feature Id="Main" Title="Ubunye Light" Level="1">
       <ComponentGroupRef Id="LightcraftFiles" />
     </Feature>
 
@@ -55,14 +55,14 @@
 
   <!--
     Interactive install UI: Welcome -> Destination Folder -> Ready to install -> progress ->
-    "Completed" (Finish), with a "Launch LightCraft" checkbox (checked by default). Destination
-    Folder (issue #399) shows Program Files\LightCraft, or the installed version's folder on an
+    "Completed" (Finish), with a "Launch Ubunye Light" checkbox (checked by default). Destination
+    Folder (issue #399) shows Program Files\Ubunye Light, or the installed version's folder on an
     upgrade; Change... browses, and a folder that can't be used (InvalidDirDlg) is refused before
     anything is installed. Failure and cancellation end on WiX's standard FatalError / UserExit
     dialogs instead of the completion page. Maintenance (running the MSI again, Repair/Remove from
     Apps) uses the standard maintenance dialogs.
 
-    This is WixUI_InstallDir without its licence-acceptance page: LightCraft is MIT OR Apache-2.0,
+    This is WixUI_InstallDir without its licence-acceptance page: Ubunye Light is MIT OR Apache-2.0,
     which ask nothing of people who just install and run it, so a click-through EULA would only
     add a step. Silent (/qn) and basic-UI (/passive, /qb) installs never show these dialogs, so
     they are unaffected, and nothing is launched.
@@ -75,11 +75,11 @@
     <WixVariable Id="WixUIBannerBmp" Value="$(var.UiBannerBmp)" />
 
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT"
-        Value="LightCraft has been installed. You can start it at any time from the Start menu." />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch LightCraft" />
+        Value="Ubunye Light has been installed. You can start it at any time from the Start menu." />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Ubunye Light" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
 
-    <!-- "Launch LightCraft" on Finish. WixUnelevatedShellExec (Util extension) asks the desktop
+    <!-- "Launch Ubunye Light" on Finish. WixUnelevatedShellExec (Util extension) asks the desktop
          shell (Explorer) to start the program, so it runs as the signed-in user at normal
          integrity even when the installer UI itself is elevated (e.g. msiexec started from an
          admin prompt); it never runs from the elevated/SYSTEM server side. It is a UI-only control
@@ -165,15 +165,15 @@
 
   <Fragment>
     <ComponentGroup Id="LightcraftFiles" Directory="INSTALLFOLDER">
-      <Component Id="LightcraftApp" Guid="8A1D3A39-F7C1-47B1-97AE-40C80BF82F4A">
+      <Component Id="LightcraftApp" Guid="E866936A-E519-550B-824C-53D72B13AE33">
         <File Id="LightcraftExe" Source="$(var.BinDir)\lightcraft.exe" KeyPath="yes">
-          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="LightCraft"
-              Description="LightCraft photo library and raw developer" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Ubunye Light"
+              Description="Ubunye Light photo library and raw developer" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
               Icon="LightcraftIcon.ico" IconIndex="0" />
         </File>
 
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\lightcraft.exe" Value="[#LightcraftExe]" Type="string" />
-        <RegistryValue Root="HKLM" Key="Software\LightCraft" Name="InstallFolder" Value="[INSTALLFOLDER]" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Ubunye AI Ecosystems\Ubunye Light" Name="InstallFolder" Value="[INSTALLFOLDER]" Type="string" />
       </Component>
 
       <Component Id="LightcraftCli">

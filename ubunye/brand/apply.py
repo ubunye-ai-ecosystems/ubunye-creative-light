@@ -656,7 +656,7 @@ In this distribution the upstream app icon (the `assets/app-icon/` row above) an
 # Icons and file moves
 # ---------------------------------------------------------------------------------------------
 def favicon_tag() -> str:
-    data = base64.b64encode(ICON_SVG.read_bytes()).decode("ascii")
+    data = base64.b64encode(ICON_SVG.read_bytes().replace(b"\r\n", b"\n")).decode("ascii")
     return f'<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{data}">'
 
 

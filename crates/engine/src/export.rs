@@ -1983,7 +1983,7 @@ mod tests {
         for p in img.data.iter_mut() {
             *p = [0, 0, 0, 255];
         }
-        let o = ExportOptions::from_json(&serde_json::json!({"watermark": {"text": "LightCraft", "size": 0.08, "opacity": 1.0, "shadow": false}}));
+        let o = ExportOptions::from_json(&serde_json::json!({"watermark": {"text": "Ubunye Light", "size": 0.08, "opacity": 1.0, "shadow": false}}));
         let wm = o.watermark.clone().unwrap();
         draw_watermark(&mut img, &wm);
         let lit = |x0: usize, x1: usize, y0: usize, y1: usize| {
@@ -2017,7 +2017,7 @@ mod tests {
     #[test]
     fn watermarks_work_without_craft_fonts() {
         assert_eq!(watermark_fonts(&[]).len(), 1, "Inter only");
-        for wm in [vertical_japanese(), Watermark { text: "LightCraft 日本語".into(), ..Watermark::default() }] {
+        for wm in [vertical_japanese(), Watermark { text: "Ubunye Light 日本語".into(), ..Watermark::default() }] {
             let mut covered = 0usize;
             watermark_coverage(400, 300, &wm, &[], |_, _, k, _| covered += usize::from(k > 0.0));
             assert!(covered > 0, "{:?} draws something", wm.text);

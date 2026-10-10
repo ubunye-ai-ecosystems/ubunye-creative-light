@@ -2,26 +2,26 @@
 <!-- AppStream metadata (software centres, Flathub). Template: package.sh and the Flatpak
      manifest substitute @VERSION@ and @DATE@ from Cargo.toml and the build date. -->
 <component type="desktop-application">
-  <id>ai.storyteller.lightcraft</id>
+  <id>org.ubunye.creative.light</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT OR Apache-2.0</project_license>
-  <name>LightCraft</name>
+  <name>Ubunye Light</name>
   <summary>Organise photos and develop raw files, non-destructively</summary>
-  <developer id="ai.storyteller">
-    <name>Learning Machines LLC</name>
+  <developer id="org.ubunye">
+    <name>Ubunye AI Ecosystems</name>
   </developer>
   <description>
     <p>
-      LightCraft is a photo library and raw developer. Organise photos and develop raw files, non-destructively
+      Ubunye Light is a photo library and raw developer. Organise photos and develop raw files, non-destructively
     </p>
   </description>
-  <launchable type="desktop-id">ai.storyteller.lightcraft.desktop</launchable>
-  <icon type="stock">ai.storyteller.lightcraft</icon>
+  <launchable type="desktop-id">org.ubunye.creative.light.desktop</launchable>
+  <icon type="stock">org.ubunye.creative.light</icon>
   <!-- Only url types known to appstream 0.15 (Ubuntu 22.04, where CI validates): no vcs-browser. -->
-  <url type="homepage">https://getartcraft.com/apps/lightcraft</url>
-  <url type="bugtracker">https://github.com/storytold/lightcraft/issues</url>
-  <url type="help">https://github.com/storytold/lightcraft</url>
-  <url type="contact">https://discord.gg/artcraft</url>
+  <url type="homepage">https://www.thabangvision.com/tools/light</url>
+  <url type="bugtracker">https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues</url>
+  <url type="help">https://github.com/ubunye-ai-ecosystems/ubunye-creative-light</url>
+  <url type="contact">https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues</url>
   <categories>
     <category>Graphics</category>
     <category>RasterGraphics</category>
@@ -36,7 +36,7 @@
   <screenshots>
     <screenshot type="default">
       <caption>Editing The Great Wave off Kanagawa with type layers and adjustment layers</caption>
-      <image>https://raw.githubusercontent.com/storytold/lightcraft/main/docs/images/lightcraft-demo.jpg</image>
+      <image>https://raw.githubusercontent.com/ubunye-ai-ecosystems/ubunye-creative-light/main/docs/images/lightcraft-demo.jpg</image>
     </screenshot>
   </screenshots>
   <branding>

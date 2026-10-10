@@ -25,7 +25,7 @@ use lightcraft_mcp::{Backend, DEFAULT_ADDR, Headless, Remote, Server, expand_pat
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
-lightcraft-cli — headless LightCraft (photo library + raw developer)
+lightcraft-cli — headless Ubunye Light (photo library + raw developer; Based on LightCraft by the ArtCraft team)
 
 USAGE:
   lightcraft-cli run [OPTIONS] COMMAND [key=value | '{json}']… [COMMAND …]…
@@ -38,7 +38,7 @@ USAGE:
             develop.auto app.export path=/tmp/a.jpg longEdge=1600
       Options:
         --demo            headless, the procedural demo library
-        --library DIR     headless, open (or create) a LightCraft library; edits are saved
+        --library DIR     headless, open (or create) an Ubunye Light library; edits are saved
         --import PATH     headless, import a file or folder first (repeatable)
         --connect [ADDR]  drive the running app (`lightcraft --control 7980`; default 127.0.0.1:7980)
         --script FILE|-   also run JSON lines {\"command\": id, \"params\": {…}} (or {\"method\": …})
@@ -48,7 +48,7 @@ USAGE:
       given files imported. Options:
         --connect [ADDR]  drive a running app instead (`lightcraft --control 7980`; default 127.0.0.1:7980)
         --demo            headless: start with the procedurally generated demo library
-        --library DIR     headless: open (or create) a persistent LightCraft library; edits are saved
+        --library DIR     headless: open (or create) a persistent Ubunye Light library; edits are saved
         --compact         list only the helper tools (every command stays reachable via run_command)
   lightcraft-cli render <IN> -o <OUT> [OPTIONS]
       Develop one file and export it (.jpg, .png, .tif, .webp, .avif or .dng by extension) with the
@@ -66,7 +66,7 @@ USAGE:
       Run the full app UI headlessly (no window, no GPU: CPU-rasterized egui) and write PNGs.
       Options:
         --demo            the procedural demo library (default unless --library or FILES)
-        --library DIR     open (or create) a LightCraft library
+        --library DIR     open (or create) an Ubunye Light library
         --script FILE     JSON-lines control-protocol requests (docs/control-protocol.md), one
                           per line: {\"method\": \"ui.set\", \"params\": {\"view\": \"detail\"}}.
                           Replies go to stdout. `ui.screenshot` without a path writes -o (then
@@ -90,7 +90,7 @@ USAGE:
   lightcraft-cli calibrate [--max N] [--out DIR] FOLDERS/FILES…
       Fit a colour profile per camera model from raw files and their embedded camera JPEGs
       (Sony ARW, Nikon NEF, Fujifilm RAF): up to N files spread over the folders (default 300; 0 = all), pooled per
-      model, written as <model>.json to DIR (default: the profiles folder LightCraft reads,
+      model, written as <model>.json to DIR (default: the profiles folder Ubunye Light reads,
       <config>/camera-profiles, or $LIGHTCRAFT_CAMERA_PROFILES). Raws of a profiled model then
       take their colour from the profile and only their tone from their own JPEG.
   lightcraft-cli --version | --help
@@ -147,7 +147,7 @@ fn main() -> ExitCode {
         Some("controls") => controls(&args[1..]),
         Some("calibrate") => calibrate(&args[1..]),
         Some("--version" | "-V" | "version") => {
-            println!("lightcraft-cli {}", env!("CARGO_PKG_VERSION"));
+            println!("lightcraft-cli {} ({})", env!("CARGO_PKG_VERSION"), lightcraft_engine::brand::NAME);
             Ok(())
         }
         Some("--help" | "-h" | "help") | None => {
@@ -310,11 +310,11 @@ fn mcp(args: &[String]) -> Result<(), String> {
             }
             match Remote::connect(&addr) {
                 Ok(r) => {
-                    eprintln!("lightcraft-cli mcp: connected to LightCraft at {addr}");
+                    eprintln!("lightcraft-cli mcp: connected to Ubunye Light at {addr}");
                     Box::new(r)
                 }
                 Err(e) => {
-                    eprintln!("lightcraft-cli mcp: LightCraft is not reachable at {addr} yet ({e}); will retry on each call");
+                    eprintln!("lightcraft-cli mcp: Ubunye Light is not reachable at {addr} yet ({e}); will retry on each call");
                     Box::new(Remote::lazy(&addr))
                 }
             }
@@ -554,7 +554,7 @@ fn run(args: &[String]) -> Result<(), String> {
                     return Err("--demo, --library and --import apply to headless mode only".into());
                 }
                 Box::new(Remote::connect(&addr).map_err(|e| {
-                    format!("LightCraft is not reachable at {addr} ({e}); start it with `lightcraft --control {}`", connect_port(&addr))
+                    format!("Ubunye Light is not reachable at {addr} ({e}); start it with `lightcraft --control {}`", connect_port(&addr))
                 })?)
             }
             None => {

@@ -515,7 +515,7 @@ impl LightcraftApp {
                 let t = ctx.input(|i| i.time);
                 self.ui.toast = Some((
                     crate::i18n::tr_format!(
-                        "{n} change{} saved in memory but not written to disk: {e} — LightCraft will retry",
+                        "{n} change{} saved in memory but not written to disk: {e} — Ubunye Light will retry",
                         if n == 1 { "" } else { "s" },
                         n = n,
                         e = e
