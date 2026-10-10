@@ -844,6 +844,20 @@ def leak_scan(ch: Changes, files: list[str]) -> None:
                 ch.problems.append(f"{rel}: references docs/brand (ArtCraft marks)")
 
 
+def format_rust(files: list[str]) -> None:
+    """rustfmt the Rust files this run changed: a longer product name can push a line past
+    max_width, and rustfmt then lays the expression out differently. Optional (warns without it)."""
+    if not files:
+        return
+    rustfmt = os.environ.get("RUSTFMT") or shutil.which("rustfmt")
+    if not rustfmt:
+        print("warning: rustfmt not found; run `cargo fmt --all` before committing")
+        return
+    r = subprocess.run([rustfmt, "--edition", "2024", "--config-path", str(ROOT / "rustfmt.toml"), *files], cwd=str(ROOT))
+    if r.returncode:
+        print("warning: rustfmt failed; run `cargo fmt --all` before committing")
+
+
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -880,7 +894,9 @@ def main() -> int:
         print("brand check passed: no leaks, every scripted change is applied" + (f" ({len(ch.drift)} drift note(s))" if ch.drift else ""))
         return 0
 
+    rust_changed = [c for c in ch.pending if c.endswith(".rs")]
     ch.flush()
+    format_rust(rust_changed)
     render_icons_if_needed()
     for c in ch.changed:
         print(f"updated: {c}")
