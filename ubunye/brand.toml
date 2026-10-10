@@ -1,28 +1,32 @@
-# Ubunye identity for Ubunye Creative Light. Single source of truth for Milestone 4 (branding).
-# Values are not wired into the build yet; branding changes start only after brand-kit approval.
+# Ubunye identity for Ubunye Light (repo: ubunye-creative-light). Single source of truth for the brand layer.
+# ubunye/brand/apply.py reads this file: it generates crates/engine/src/brand.rs from it and uses
+# it for every scripted replacement. Change a value here, then run `python -I ubunye/brand/apply.py`.
 [product]
-name = "Ubunye Creative Light"
+name = "Ubunye Light"                                       # the ONE place the product name is set
 short_name = "Light"
 slug = "ubunye-creative-light"
 suite = "Ubunye Creative Studio"
+distributor = "ThabangVision"
 vendor = "Ubunye AI Ecosystems"
 description = "RAW photo library and development"
-based_on = "Based on LightCraft by the ArtCraft team (https://github.com/storytold/lightcraft), used under MIT OR Apache-2.0."
+license = "MIT OR Apache-2.0"
+# Plain-text credit (no ArtCraft marks). Shown in About, the README and the website.
+based_on = "Based on LightCraft by the ArtCraft team"
 
 [identifiers]
-app_id = "org.ubunye.creative.light"                         # macOS bundle id, Linux app id, Flatpak id
+app_id = "org.ubunye.creative.light"                         # macOS bundle id, Linux app id, Flatpak id, config folder
 document_uti = "org.ubunye.creative.light.document"
-windows_upgrade_code = "9210D947-FF7A-4C2A-817A-EE355C6A0E4F"         # generated for Ubunye; never reuse upstream's GUID
-env_prefix = "UBUNYE_LIGHT"                    # replaces upstream's LIGHTCRAFT_* variables
-config_dir = "ubunye-creative-light"
+windows_upgrade_code = "9210D947-FF7A-4C2A-817A-EE355C6A0E4F"  # from studio-tools/brand/identities.toml; never reuse upstream's GUID
+# Kept as upstream for now (merge cost): LIGHTCRAFT_* environment variables, crate and binary names.
+env_prefix = "LIGHTCRAFT"
 
 [links]
-homepage = "https://thabangvision.com/studio/light"
-downloads = "https://downloads.thabangvision.com/light/"
-web_app = "https://light.studio.thabangvision.com/"
+homepage = "https://www.thabangvision.com/tools/light"
+suite = "https://www.thabangvision.com/tools"
+downloads = "https://downloads.thabangvision.com/light/stable/"
 source = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light"
 issues = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues"
-update_manifest = "https://downloads.thabangvision.com/manifests/light/stable.json"
+upstream = "https://github.com/storytold/lightcraft"
 
 [upstream_identity_to_replace]
 names = ["LightCraft", "ArtCraft"]

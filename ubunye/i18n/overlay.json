@@ -1,0 +1,66 @@
+{
+  "_comment": "Ubunye translations for the labels apply.py renames (upstream ArtCraft/Discord links). Keys are the new English labels; {suite} is replaced by the suite name from ubunye/brand.toml.",
+  "de": {
+    "Questions and Ideas…": "Fragen und Ideen…",
+    "Ask a Question or Share an Idea": "Eine Frage stellen oder eine Idee teilen",
+    "Questions and ideas": "Fragen und Ideen",
+    "{suite} Website": "Website von {suite}",
+    "{suite}: more creative apps": "{suite}: weitere Kreativ-Apps"
+  },
+  "es": {
+    "Questions and Ideas…": "Preguntas e ideas…",
+    "Ask a Question or Share an Idea": "Hacer una pregunta o compartir una idea",
+    "Questions and ideas": "Preguntas e ideas",
+    "{suite} Website": "Sitio web de {suite}",
+    "{suite}: more creative apps": "{suite}: más aplicaciones creativas"
+  },
+  "fr": {
+    "Questions and Ideas…": "Questions et idées…",
+    "Ask a Question or Share an Idea": "Poser une question ou partager une idée",
+    "Questions and ideas": "Questions et idées",
+    "{suite} Website": "Site web d'{suite}",
+    "{suite}: more creative apps": "{suite} : d'autres applications créatives"
+  },
+  "ja": {
+    "Questions and Ideas…": "質問とアイデア…",
+    "Ask a Question or Share an Idea": "質問する・アイデアを共有する",
+    "Questions and ideas": "質問とアイデア",
+    "{suite} Website": "{suite}のウェブサイト",
+    "{suite}: more creative apps": "{suite} — その他のクリエイティブアプリ"
+  },
+  "pt-br": {
+    "Questions and Ideas…": "Perguntas e ideias…",
+    "Ask a Question or Share an Idea": "Fazer uma pergunta ou compartilhar uma ideia",
+    "Questions and ideas": "Perguntas e ideias",
+    "{suite} Website": "Site do {suite}",
+    "{suite}: more creative apps": "{suite} — mais aplicativos criativos"
+  },
+  "ru": {
+    "Questions and Ideas…": "Вопросы и идеи…",
+    "Ask a Question or Share an Idea": "Задать вопрос или поделиться идеей",
+    "Questions and ideas": "Вопросы и идеи",
+    "{suite} Website": "Сайт {suite}",
+    "{suite}: more creative apps": "{suite} — другие творческие приложения"
+  },
+  "uk": {
+    "Questions and Ideas…": "Питання та ідеї…",
+    "Ask a Question or Share an Idea": "Поставити запитання або поділитися ідеєю",
+    "Questions and ideas": "Питання та ідеї",
+    "{suite} Website": "Вебсайт {suite}",
+    "{suite}: more creative apps": "{suite} — інші творчі застосунки"
+  },
+  "zh-hans": {
+    "Questions and Ideas…": "问题与建议…",
+    "Ask a Question or Share an Idea": "提问或分享想法",
+    "Questions and ideas": "问题与建议",
+    "{suite} Website": "{suite} 网站",
+    "{suite}: more creative apps": "{suite} — 更多创意应用"
+  },
+  "zh-hant": {
+    "Questions and Ideas…": "問題與建議…",
+    "Ask a Question or Share an Idea": "提問或分享想法",
+    "Questions and ideas": "問題與建議",
+    "{suite} Website": "{suite} 網站",
+    "{suite}: more creative apps": "{suite} — 更多創作應用程式"
+  }
+}
