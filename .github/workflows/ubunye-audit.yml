@@ -1,0 +1,17 @@
+name: ubunye-audit
+on:
+  pull_request:
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml"]
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  deny:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      - uses: EmbarkStudios/cargo-deny-action@v2   # TODO(M2): pin by SHA
+        with:
+          command: check advisories licenses sources bans

@@ -1,0 +1,32 @@
+{
+  "$schema_version": 1,
+  "app": "ubunye-creative-light",
+  "upstream": {
+    "name": "LightCraft",
+    "url": "https://github.com/storytold/lightcraft.git",
+    "branch": "main",
+    "license": "MIT OR Apache-2.0"
+  },
+  "last_checked_at": "2026-10-10T17:08:55Z",
+  "last_integrated": {
+    "sha": "b70ae1741e8236757377ca85eecaafb8788a82ab",
+    "date": "2026-10-10T05:14:58-04:00",
+    "upstream_version": "0.5.0",
+    "upstream_tag": "v0.5.0",
+    "method": "initial-import",
+    "merged_pr": null,
+    "merged_by": null,
+    "merged_at": null
+  },
+  "pending": null,
+  "history": [
+    {
+      "sha": "b70ae1741e8236757377ca85eecaafb8788a82ab",
+      "outcome": "initial-import",
+      "commits": 1552,
+      "conflicts": 0,
+      "ci": "not-run",
+      "recorded_at": "2026-10-10T17:08:55Z"
+    }
+  ]
+}

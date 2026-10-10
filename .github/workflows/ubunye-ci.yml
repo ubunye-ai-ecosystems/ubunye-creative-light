@@ -1,0 +1,68 @@
+# Ubunye CI gate. Upstream workflows are left as they are; this file is Ubunye-owned.
+name: ubunye-ci
+on:
+  pull_request:
+    branches: [develop, "release/**", main]
+  push:
+    branches: [develop]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: ubunye-ci-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2         # TODO(M2): pin by SHA
+      - name: Build
+        run: cargo build --locked --workspace
+      - name: Test
+        run: cargo test --locked --workspace --no-fail-fast
+      - name: Smoke (import → edit → save → reopen → export)
+        if: runner.os != 'Windows' && hashFiles('ubunye/scripts/smoke.sh') != ''
+        run: bash ubunye/scripts/smoke.sh "$PWD/target/debug/lightcraft-cli" "$RUNNER_TEMP/smoke"
+
+  upstream-gate:
+    # Upstream's own full gate (fmt, clippy -D warnings, tests, layers, assets, wasm).
+    # Informational until a green baseline is recorded in ubunye/DEVELOPMENT.md.
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask ci
+
+  brand-leak:
+    # Informational until Milestone 4, then remove continue-on-error.
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upstream identity outside allow-listed files
+        run: |
+          set +e
+          git grep -n -I -E 'ArtCraft|getartcraft|ai\.storyteller|Learning Machines|storytold' -- \
+            ':!LICENSE*' ':!NOTICE' ':!**/ATTRIBUTION*' ':!UPSTREAM*' ':!ubunye/**' ':!docs/brand/**' ':!**/credits.rs' \
+            > leaks.txt
+          echo "leaks: $(wc -l < leaks.txt) lines in $(cut -d: -f1 leaks.txt | sort -u | wc -l) files" | tee -a "$GITHUB_STEP_SUMMARY"
+          test ! -s leaks.txt
