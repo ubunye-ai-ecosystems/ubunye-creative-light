@@ -602,9 +602,9 @@ ICON_LICENSE = f"""{NAME} app icon (lightcraft.svg and every file derived from i
 lightcraft-small.svg, lightcraft-1024.png, lightcraft-macos-512.png, lightcraft.icns,
 lightcraft.ico, hicolor/).
 
-{VENDOR} artwork adapted from the ThabangVision logo, MIT OR Apache-2.0; letter outline from
-DM Serif Display (SIL OFL 1.1). It replaces the upstream LightCraft icon in this distribution.
-Source: ubunye/brand/assets/icon.svg. Licensed under either of
+{VENDOR} artwork from the Ubunye Creative Studio brand system, MIT OR Apache-2.0; letter outlines
+from DM Serif Display (SIL OFL 1.1). It replaces the upstream LightCraft icon in this distribution.
+Source: ubunye/brand/assets/icon.svg (icon-small.svg at 32 px and below). Licensed under either of
 
   * Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
   * MIT license (https://opensource.org/licenses/MIT)
@@ -616,7 +616,7 @@ Regenerate the derived files with `python ubunye/brand/render_icons.py` (or pack
 
 ICON_README = f"""# {NAME} app icon
 
-The {NAME} icon: {VENDOR} artwork adapted from the ThabangVision logo, with a letter outline from
+The {NAME} icon: {VENDOR} artwork from the Ubunye Creative Studio brand system, with letter outlines from
 DM Serif Display (SIL OFL 1.1). It replaces upstream LightCraft's icon in this distribution.
 
 The source is `ubunye/brand/assets/icon.svg` (a full-bleed 512 tile, `viewBox="0 0 512 512"`).
@@ -648,7 +648,7 @@ In this distribution the upstream app icon (the `assets/app-icon/` row above) an
 
 | Path | Asset | Creator | Source | Licence | Added | Modifications |
 |---|---|---|---|---|---|---|
-| `ubunye/brand/assets/` (`icon.svg`), copied to `assets/app-icon/` with the PNG/ICNS/ICO files rendered from it | {NAME} app icon | {VENDOR} | adapted from the ThabangVision logo; letter outline from DM Serif Display | MIT OR Apache-2.0; letter outline SIL Open Font License 1.1 | 2026-10-11 | rendered to PNG/ICO/ICNS by `ubunye/brand/render_icons.py` |
+| `ubunye/brand/assets/` (`icon.svg`, `icon-small.svg`), copied to `assets/app-icon/` with the PNG/ICNS/ICO files rendered from it | {NAME} app icon | {VENDOR} | Ubunye Creative Studio brand system (ubunye-creative-studio-tools/branding); letter outlines from DM Serif Display | MIT OR Apache-2.0; letter outline SIL Open Font License 1.1 | 2026-10-11 | rendered to PNG/ICO/ICNS by `ubunye/brand/render_icons.py` |
 """
 
 
@@ -677,9 +677,11 @@ def moves(ch: Changes) -> None:
 
 def icons(ch: Changes) -> None:
     svg = ICON_SVG.read_text(encoding="utf-8")
-    for rel in ("assets/app-icon/lightcraft.svg", "assets/app-icon/lightcraft-small.svg",
-                f"assets/app-icon/hicolor/scalable/apps/{APP_ID}.svg"):
+    small_src = ICON_SVG.with_name("icon-small.svg")
+    small = small_src.read_text(encoding="utf-8") if small_src.exists() else svg
+    for rel in ("assets/app-icon/lightcraft.svg", f"assets/app-icon/hicolor/scalable/apps/{APP_ID}.svg"):
         ch.put(rel, svg)
+    ch.put("assets/app-icon/lightcraft-small.svg", small)
     ch.put("assets/app-icon/LICENSE.txt", ICON_LICENSE)
     for p in sorted((ROOT / "docs" / "brand").glob("artcraft-*")):
         ch.changed.append(f"delete {p.relative_to(ROOT).as_posix()}")

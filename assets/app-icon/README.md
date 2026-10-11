@@ -1,6 +1,6 @@
 # Ubunye Light app icon
 
-The Ubunye Light icon: Ubunye AI Ecosystems artwork adapted from the ThabangVision logo, with a letter outline from
+The Ubunye Light icon: Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system, with letter outlines from
 DM Serif Display (SIL OFL 1.1). It replaces upstream LightCraft's icon in this distribution.
 
 The source is `ubunye/brand/assets/icon.svg` (a full-bleed 512 tile, `viewBox="0 0 512 512"`).

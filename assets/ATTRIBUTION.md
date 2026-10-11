@@ -42,4 +42,4 @@ In this distribution the upstream app icon (the `assets/app-icon/` row above) an
 
 | Path | Asset | Creator | Source | Licence | Added | Modifications |
 |---|---|---|---|---|---|---|
-| `ubunye/brand/assets/` (`icon.svg`), copied to `assets/app-icon/` with the PNG/ICNS/ICO files rendered from it | Ubunye Light app icon | Ubunye AI Ecosystems | adapted from the ThabangVision logo; letter outline from DM Serif Display | MIT OR Apache-2.0; letter outline SIL Open Font License 1.1 | 2026-10-11 | rendered to PNG/ICO/ICNS by `ubunye/brand/render_icons.py` |
+| `ubunye/brand/assets/` (`icon.svg`, `icon-small.svg`), copied to `assets/app-icon/` with the PNG/ICNS/ICO files rendered from it | Ubunye Light app icon | Ubunye AI Ecosystems | Ubunye Creative Studio brand system (ubunye-creative-studio-tools/branding); letter outlines from DM Serif Display | MIT OR Apache-2.0; letter outline SIL Open Font License 1.1 | 2026-10-11 | rendered to PNG/ICO/ICNS by `ubunye/brand/render_icons.py` |

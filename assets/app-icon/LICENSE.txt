@@ -2,9 +2,9 @@ Ubunye Light app icon (lightcraft.svg and every file derived from it in this dir
 lightcraft-small.svg, lightcraft-1024.png, lightcraft-macos-512.png, lightcraft.icns,
 lightcraft.ico, hicolor/).
 
-Ubunye AI Ecosystems artwork adapted from the ThabangVision logo, MIT OR Apache-2.0; letter outline from
-DM Serif Display (SIL OFL 1.1). It replaces the upstream LightCraft icon in this distribution.
-Source: ubunye/brand/assets/icon.svg. Licensed under either of
+Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system, MIT OR Apache-2.0; letter outlines
+from DM Serif Display (SIL OFL 1.1). It replaces the upstream LightCraft icon in this distribution.
+Source: ubunye/brand/assets/icon.svg (icon-small.svg at 32 px and below). Licensed under either of
 
   * Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
   * MIT license (https://opensource.org/licenses/MIT)

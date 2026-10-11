@@ -24,6 +24,8 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "ubunye" / "brand" / "assets" / "icon.svg"
+# Simplified icon (fewer, thicker rays, no glow) used at 32 px and below.
+SMALL = ROOT / "ubunye" / "brand" / "assets" / "icon-small.svg"
 DIR = ROOT / "assets" / "app-icon"
 with open(ROOT / "ubunye" / "brand.toml", "rb") as fh:
     APP_ID = tomllib.load(fh)["identifiers"]["app_id"]
@@ -52,22 +54,23 @@ def main() -> int:
             subprocess.run([args.resvg, "-w", str(size), "-h", str(size), str(src), str(dst)], check=True)
             return dst
 
-        for name in ("lightcraft.svg", "lightcraft-small.svg"):
-            out(DIR / name).write_text(svg, encoding="utf-8", newline="\n")
+        out(DIR / "lightcraft.svg").write_text(svg, encoding="utf-8", newline="\n")
+        small_svg = SMALL.read_text(encoding="utf-8") if SMALL.exists() else svg
+        out(DIR / "lightcraft-small.svg").write_text(small_svg, encoding="utf-8", newline="\n")
         out(DIR / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg").write_text(svg, encoding="utf-8", newline="\n")
 
         render(SRC, 1024, out(DIR / "lightcraft-1024.png"))
         render(mac, 512, out(DIR / "lightcraft-macos-512.png"))
         for s in (16, 24, 32, 48, 64, 128, 256, 512):
-            render(SRC, s, out(DIR / "hicolor" / f"{s}x{s}" / "apps" / f"{APP_ID}.png"))
+            render(SMALL if s <= 32 and SMALL.exists() else SRC, s, out(DIR / "hicolor" / f"{s}x{s}" / "apps" / f"{APP_ID}.png"))
 
         ico_sizes = (16, 20, 24, 32, 40, 48, 64, 128, 256)
-        ico_imgs = [Image.open(render(SRC, s, tmp / f"ico-{s}.png")).convert("RGBA") for s in ico_sizes]
+        ico_imgs = [Image.open(render(SMALL if s <= 32 and SMALL.exists() else SRC, s, tmp / f"ico-{s}.png")).convert("RGBA") for s in ico_sizes]
         ico_imgs[-1].save(out(DIR / "lightcraft.ico"), format="ICO", sizes=[(s, s) for s in ico_sizes],
                           append_images=ico_imgs[:-1])
 
         icns_sizes = (16, 32, 64, 128, 256, 512, 1024)
-        icns_imgs = [Image.open(render(mac, s, tmp / f"icns-{s}.png")).convert("RGBA") for s in icns_sizes]
+        icns_imgs = [Image.open(render(SMALL if s <= 32 and SMALL.exists() else mac, s, tmp / f"icns-{s}.png")).convert("RGBA") for s in icns_sizes]
         icns_imgs[-1].save(out(DIR / "lightcraft.icns"), format="ICNS", append_images=icns_imgs[:-1])
 
     def file_digest(p: Path) -> str:  # same as apply.py: SVG hashed with LF endings
@@ -77,6 +80,8 @@ def main() -> int:
         return hashlib.sha256(data).hexdigest()
 
     lines = [f"{file_digest(SRC)}  {SRC.relative_to(ROOT).as_posix()}"]
+    if SMALL.exists():
+        lines.append(f"{file_digest(SMALL)}  {SMALL.relative_to(ROOT).as_posix()}")
     for p in sorted(written):
         digest = file_digest(p)
         lines.append(f"{digest}  {p.relative_to(ROOT).as_posix()}")
