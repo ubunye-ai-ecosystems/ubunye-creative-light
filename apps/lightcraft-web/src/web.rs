@@ -295,7 +295,7 @@ async fn boot(opts: Options) -> Boot {
         if opts.reset {
             // everything this site keeps in the browser, photos included: never without asking
             let ok = safety::confirm(
-                "?reset deletes the LightCraft library stored in this browser, including every imported photo. \
+                "?reset deletes the Ubunye Light library stored in this browser, including every imported photo. \
                  This can't be undone. Delete it?",
             );
             if ok {
@@ -327,7 +327,7 @@ async fn boot(opts: Options) -> Boot {
         crate::backend::request_persistence(|granted| {
             if !granted {
                 notice(
-                    "This browser may delete LightCraft's library when it runs short of space (persistent storage wasn't granted). \
+                    "This browser may delete Ubunye Light's library when it runs short of space (persistent storage wasn't granted). \
                      Keep your original photos elsewhere and use File ▸ Back Up Library… now and then.",
                 );
             }
@@ -419,7 +419,7 @@ impl WebApp {
         }
         if backend.is_some() {
             notice(
-                "LightCraft in the browser is experimental. Your library is kept in this browser's storage: keep your original photos \
+                "Ubunye Light in the browser is experimental. Your library is kept in this browser's storage: keep your original photos \
                  elsewhere and back up with File ▸ Back Up Library….",
             );
         }
@@ -674,7 +674,7 @@ pub fn start(chinese_font: Vec<u8>) {
         // one tab per library: two would each keep their own copy and overwrite each other's saves
         if opts.store != "memory" && safety::acquire_tab_lock().await == Some(false) {
             safety::show_blocking(
-                "LightCraft is already open in another tab or window of this browser.\n\n\
+                "Ubunye Light is already open in another tab or window of this browser.\n\n\
                  Switch to that tab, or close it and reload this page. (Two tabs would overwrite each other's changes.)",
             );
             return;
@@ -697,8 +697,8 @@ pub fn start(chinese_font: Vec<u8>) {
                 }
             }
             Err(e) => {
-                log::error!("LightCraft failed to start: {e:?}");
-                set_status(&format!("LightCraft failed to start: {e:?}"));
+                log::error!("Ubunye Light failed to start: {e:?}");
+                set_status(&format!("Ubunye Light failed to start: {e:?}"));
             }
         }
     });

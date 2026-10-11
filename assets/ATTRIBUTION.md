@@ -34,3 +34,12 @@ Notes
   [storytold/craft-fonts](https://github.com/storytold/craft-fonts), with their licences and attribution in its
   `ATTRIBUTION.md`, and are embedded only in builds made with the optional `CRAFT_FONTS_DIR` build input (all official
   releases). Never commit font files here; add new fonts to craft-fonts (craftrules `standards/fonts.md`).
+
+## Ubunye distribution (appended by Ubunye AI Ecosystems)
+
+In this distribution the upstream app icon (the `assets/app-icon/` row above) and the ArtCraft marks
+(the `docs/brand/` row above) are not used: the icon files are replaced and the logo files removed.
+
+| Path | Asset | Creator | Source | Licence | Added | Modifications |
+|---|---|---|---|---|---|---|
+| `ubunye/brand/assets/` (`icon.svg`, `icon-small.svg`), copied to `assets/app-icon/` with the PNG/ICNS/ICO files rendered from it | Ubunye Light app icon | Ubunye AI Ecosystems | Ubunye Creative Studio brand system (ubunye-creative-studio-tools/branding); letter outlines from DM Serif Display | MIT OR Apache-2.0; letter outline SIL Open Font License 1.1 | 2026-10-11 | rendered to PNG/ICO/ICNS by `ubunye/brand/render_icons.py` |

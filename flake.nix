@@ -1,8 +1,8 @@
 {
-  description = "LightCraft — photo library and non-destructive raw developer, in pure Rust";
+  description = "Ubunye Light — photo library and non-destructive raw developer, in pure Rust";
 
   inputs = {
-    # LightCraft needs edition 2024 and rustc ≥ 1.90, so the flake tracks unstable. Consumers on a
+    # Ubunye Light needs edition 2024 and rustc ≥ 1.90, so the flake tracks unstable. Consumers on a
     # release channel can retarget it: `inputs.lightcraft.inputs.nixpkgs.follows = "nixpkgs";`
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

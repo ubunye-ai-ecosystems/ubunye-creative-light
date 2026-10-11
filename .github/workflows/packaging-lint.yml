@@ -56,15 +56,15 @@ jobs:
               'Key="Software\LightCraft" Name="InstallFolder"' 'Value="LaunchLightcraft"'; do
             grep -qF "$want" packaging/windows/lightcraft.wxs || { echo "::error::lightcraft.wxs lost: $want"; exit 1; }
           done
-          desktop-file-validate packaging/linux/ai.storyteller.lightcraft.desktop
-          sed -e 's/@VERSION@/0.0.0/' -e 's/@DATE@/2026-01-01/' packaging/linux/ai.storyteller.lightcraft.metainfo.xml.in >"$RUNNER_TEMP/ai.storyteller.lightcraft.metainfo.xml"
-          appstreamcli validate --no-net --explain "$RUNNER_TEMP/ai.storyteller.lightcraft.metainfo.xml"
+          desktop-file-validate packaging/linux/org.ubunye.creative.light.desktop
+          sed -e 's/@VERSION@/0.0.0/' -e 's/@DATE@/2026-01-01/' packaging/linux/org.ubunye.creative.light.metainfo.xml.in >"$RUNNER_TEMP/org.ubunye.creative.light.metainfo.xml"
+          appstreamcli validate --no-net --explain "$RUNNER_TEMP/org.ubunye.creative.light.metainfo.xml"
           python3 - <<'EOF'
           import yaml
-          src = yaml.safe_load(open("packaging/linux/flatpak/ai.storyteller.lightcraft.yml"))
-          bundle = yaml.safe_load(open("packaging/linux/flatpak/ai.storyteller.lightcraft.bundle.yml"))
+          src = yaml.safe_load(open("packaging/linux/flatpak/org.ubunye.creative.light.yml"))
+          bundle = yaml.safe_load(open("packaging/linux/flatpak/org.ubunye.creative.light.bundle.yml"))
           for m in (src, bundle):
-              assert m["id"] == "ai.storyteller.lightcraft" and m["command"] == "lightcraft", m["id"]
+              assert m["id"] == "org.ubunye.creative.light" and m["command"] == "lightcraft", m["id"]
           for key in ("runtime", "runtime-version", "sdk", "finish-args"):
               assert src[key] == bundle[key], f"Flatpak manifests disagree on {key}: {src[key]} vs {bundle[key]}"
           print("Flatpak manifests ok")

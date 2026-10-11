@@ -9,9 +9,9 @@
 # Wayland, xkbcommon and Vulkan at runtime; the freedesktop runtime has all of them, and the
 # GPU driver comes from its org.freedesktop.Platform.GL extension.
 #
-# ai.storyteller.lightcraft.yml (same directory) is the from-source manifest for Flathub. Keep
+# org.ubunye.creative.light.yml (same directory) is the from-source manifest for Flathub. Keep
 # runtime-version and finish-args identical in both (packaging-lint checks this).
-id: ai.storyteller.lightcraft
+id: org.ubunye.creative.light
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -32,18 +32,18 @@ finish-args:
   # Deliberately not granted: home/host filesystem access, and network. The network is only for
   # the optional SAM 3 model download (AI Object/Describe masks, docs/ai-masks.md); without it
   # that download fails with an error and everything else works. Users who want it run
-  # `flatpak override --user --share=network ai.storyteller.lightcraft`.
+  # `flatpak override --user --share=network org.ubunye.creative.light`.
 modules:
   - name: lightcraft
     buildsystem: simple
     build-commands:
       - install -Dm755 bin/lightcraft /app/bin/lightcraft
       - install -Dm755 bin/lightcraft-cli /app/bin/lightcraft-cli
-      - install -Dm644 share/applications/ai.storyteller.lightcraft.desktop /app/share/applications/ai.storyteller.lightcraft.desktop
+      - install -Dm644 share/applications/org.ubunye.creative.light.desktop /app/share/applications/org.ubunye.creative.light.desktop
       # The same MIME definitions the deb/rpm install.
-      - install -Dm644 share/mime/packages/ai.storyteller.lightcraft.xml /app/share/mime/packages/ai.storyteller.lightcraft.xml
+      - install -Dm644 share/mime/packages/org.ubunye.creative.light.xml /app/share/mime/packages/org.ubunye.creative.light.xml
       # Already has the release's version and date substituted by package.sh.
-      - install -Dm644 share/metainfo/ai.storyteller.lightcraft.metainfo.xml /app/share/metainfo/ai.storyteller.lightcraft.metainfo.xml
+      - install -Dm644 share/metainfo/org.ubunye.creative.light.metainfo.xml /app/share/metainfo/org.ubunye.creative.light.metainfo.xml
       - mkdir -p /app/share/icons /app/share/doc && cp -R share/icons/hicolor /app/share/icons/ && cp -R share/doc/lightcraft /app/share/doc/
     sources:
       - type: dir
