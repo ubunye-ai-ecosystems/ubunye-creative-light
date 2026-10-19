@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ubunye: ThabangVision collaboration inside the Ubunye Light MSI (Kopano slice S4).
+  Linked by packaging/windows/package.ps1 when collab-package.ps1 sets UBUNYE_EXTRA_WXS, which
+  also defines CollabBinDir (the folder holding kopanod.exe). lightcraft.wxs adds the component
+  group to its one feature.
+
+  Install: kopanod.exe goes beside lightcraft.exe. Nothing else happens at install time: Light
+  sets up the service the first time it starts, as the signed-in user (apps/lightcraft/src/
+  ubunye_collab.rs: device key, start at sign-in, start now).
+
+  Uninstall (not an upgrade): start at sign-in is turned off for the user removing the app
+  (kopanod autostart off, run as that user), then every kopanod running from this folder is
+  stopped so its file can go. An upgrade only stops it; the new Light starts it again.
+  Left on purpose: the service folder (%LOCALAPPDATA%\Kopano: the device key's name, shared
+  libraries), like Light's own library. Other Windows users who used the app keep a start entry
+  that points at the removed file; Windows skips it without a message.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="UbunyeCollabFiles" Directory="INSTALLFOLDER">
+      <Component Id="UbunyeKopanod" Guid="5B0C7E4A-2D1F-4C7B-9E35-8A61D0F3C2B9">
+        <File Id="KopanodExe" Source="$(var.CollabBinDir)\kopanod.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- WixQuietExec runs the command with no window; deferred actions read it from the
+         property of the same name. Return="ignore": a leftover service never blocks removal. -->
+    <SetProperty Id="UbunyeCollabAutostartOff" Sequence="execute" Before="UbunyeCollabAutostartOff"
+        Value="&quot;[INSTALLFOLDER]kopanod.exe&quot; autostart off --home &quot;[LocalAppDataFolder]Kopano&quot;" />
+    <CustomAction Id="UbunyeCollabAutostartOff" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
+        Execute="deferred" Impersonate="yes" Return="ignore" />
+
+    <SetProperty Id="UbunyeCollabStop" Sequence="execute" Before="UbunyeCollabStop"
+        Value="&quot;[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;Get-Process -Name kopanod -ErrorAction SilentlyContinue | Where-Object Path -eq '[INSTALLFOLDER]kopanod.exe' | Stop-Process -Force; Start-Sleep -Milliseconds 500&quot;" />
+    <CustomAction Id="UbunyeCollabStop" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec"
+        Execute="deferred" Impersonate="no" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="UbunyeCollabAutostartOff" Before="UbunyeCollabStop"
+          Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="UbunyeCollabStop" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

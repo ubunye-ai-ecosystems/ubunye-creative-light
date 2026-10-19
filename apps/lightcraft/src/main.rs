@@ -29,6 +29,7 @@ mod dialog_filter;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod ubunye_collab;
 
 use dialog_filter::FileDialogExt as _;
 use lightcraft_engine::Session;
@@ -794,6 +795,8 @@ fn main() -> eframe::Result {
             // Ubunye: Kopano's Share / Join reach this window through the control port
             app.kopano.start_control = Some(control_server::on_demand(control_port, cc.egui_ctx.clone()));
             app.kopano.control_port = control_port;
+            // Ubunye: start ThabangVision collaboration (kopanod, shipped beside the app) if needed
+            ubunye_collab::start_in_background();
             if let Some(mut p) = problem {
                 // imported once the user has chosen where (into the library, or the temporary session)
                 p.pending_import = files;

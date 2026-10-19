@@ -48,6 +48,10 @@
 
     <Feature Id="Main" Title="Ubunye Light" Level="1">
       <ComponentGroupRef Id="LightcraftFiles" />
+<?ifdef CollabBinDir?>
+      <!-- Ubunye: ThabangVision collaboration (kopanod), from ubunye/packaging/windows/collab.wxs -->
+      <ComponentGroupRef Id="UbunyeCollabFiles" />
+<?endif?>
     </Feature>
 
     <UIRef Id="LightcraftUI" />

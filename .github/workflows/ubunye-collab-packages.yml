@@ -1,0 +1,199 @@
+# Ubunye-owned. Installers of Ubunye Light with ThabangVision collaboration (kopanod, the Kopano
+# service; slice S4) inside: one download per operating system, as workflow artifacts.
+#   Windows x64: MSI (per-machine) + portable zip, kopanod.exe beside lightcraft.exe
+#   macOS:       DMG, kopanod inside Ubunye Light.app/Contents/MacOS (universal)
+#   Linux x86_64: AppImage, .deb, .rpm, .tar.gz, /usr/bin/kopanod
+# See ubunye/packaging/README.md. Test builds only: nothing is released or uploaded anywhere,
+# and this workflow uses no signing secrets (release.yml keeps the real signing).
+name: ubunye-collab-packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      kopano_ref:
+        description: "Branch, tag or commit of ubunye-creative-studio-tools holding research/kopano/lab"
+        type: string
+        default: research/kopano-architecture
+  push:
+    branches: [feature/kopano-installers]
+    paths:
+      - ubunye/packaging/**
+      - packaging/**
+      - apps/lightcraft/src/ubunye_collab.rs
+      - .github/workflows/ubunye-collab-packages.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubunye-collab-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  LIGHTCRAFT_BUILD_SHA: ${{ github.sha }}
+  KOPANO_REF: ${{ inputs.kopano_ref || 'research/kopano-architecture' }}
+  # kopanod's toolchain (as the studio-tools kopanod.yml); Light uses its rust-toolchain.toml.
+  KOPANO_RUST: 1.97.0
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
+          ref: ${{ env.KOPANO_REF }}
+          path: kopano-src
+          sparse-checkout: research/kopano/lab
+      - name: Toolchains
+        shell: bash
+        run: |
+          rustup toolchain install "$KOPANO_RUST" --profile minimal --target x86_64-pc-windows-msvc
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: collab-windows
+          workspaces: |
+            . -> target
+            kopano-src/research/kopano/lab -> target
+      - name: Install WiX
+        shell: pwsh
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: Pin kopanod's toolchain
+        shell: bash
+        run: printf '[toolchain]\nchannel = "%s"\n' "$KOPANO_RUST" > kopano-src/research/kopano/lab/rust-toolchain.toml
+      # FUTURE CODE SIGNING (Windows): when a certificate or Azure Trusted Signing exists, give
+      # this step the WINDOWS_CERTIFICATE / AZURE_* secrets exactly as release.yml does (in the
+      # `release` environment). sign.ps1 then signs lightcraft.exe, lightcraft-cli.exe,
+      # kopanod.exe and the MSI. Without them everything is unsigned and Smart App Control
+      # blocks it on new PCs.
+      - name: Build and package (MSI, portable zip)
+        shell: pwsh
+        run: ./ubunye/packaging/windows/collab-package.ps1 -Arch x64 -KopanoLab kopano-src/research/kopano/lab
+      - name: Check the MSI holds kopanod
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem dist/release/*.msi | Select-Object -First 1
+          $out = Join-Path $env:RUNNER_TEMP 'msi-x'
+          Start-Process msiexec -ArgumentList '/a', "`"$($msi.FullName)`"", '/qn', "TARGETDIR=`"$out`"" -Wait
+          $k = Get-ChildItem $out -Recurse -Filter kopanod.exe | Select-Object -First 1
+          if (-not $k) { throw 'kopanod.exe is not in the MSI' }
+          if (-not (Get-ChildItem $k.Directory -Filter lightcraft.exe)) { throw 'kopanod.exe is not beside lightcraft.exe' }
+          "ok: $($k.FullName), '$($k.VersionInfo.FileDescription)'"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubunye-light-collab-windows-x64
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macOS universal
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
+          ref: ${{ env.KOPANO_REF }}
+          path: kopano-src
+          sparse-checkout: research/kopano/lab
+      - name: Toolchains
+        run: |
+          rustup toolchain install "$KOPANO_RUST" --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin
+          printf '[toolchain]\nchannel = "%s"\n' "$KOPANO_RUST" > kopano-src/research/kopano/lab/rust-toolchain.toml
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: collab-macos
+          workspaces: |
+            . -> target
+            kopano-src/research/kopano/lab -> target
+      # FUTURE CODE SIGNING (macOS): run packaging/macos/import-cert.sh with the APPLE_* secrets
+      # and pass APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID, as release.yml does. Without them the
+      # app is ad-hoc signed: Gatekeeper asks people to allow it in System Settings.
+      - name: Build and package (DMG)
+        run: ubunye/packaging/macos/collab-package.sh kopano-src/research/kopano/lab --arch universal
+      - name: Check the app holds kopanod
+        run: |
+          app="target/macos-package/Ubunye Light.app"
+          lipo -info "$app/Contents/MacOS/kopanod"
+          codesign --verify --strict --deep --verbose=2 "$app"
+          "$app/Contents/MacOS/kopanod" id --home "$RUNNER_TEMP/k" | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubunye-light-collab-macos
+          path: dist/release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    name: Linux x86_64
+    # Oldest hosted image: glibc 2.35, as release.yml.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      NFPM_VERSION: 2.47.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
+          ref: ${{ env.KOPANO_REF }}
+          path: kopano-src
+          sparse-checkout: research/kopano/lab
+      - name: Install build and packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev \
+            desktop-file-utils appstream zsync
+          curl -fsSL -o "$RUNNER_TEMP/nfpm.deb" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
+          sudo dpkg -i "$RUNNER_TEMP/nfpm.deb"
+      - name: Toolchains
+        run: |
+          rustup toolchain install "$KOPANO_RUST" --profile minimal
+          printf '[toolchain]\nchannel = "%s"\n' "$KOPANO_RUST" > kopano-src/research/kopano/lab/rust-toolchain.toml
+          rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: collab-linux
+          workspaces: |
+            . -> target
+            kopano-src/research/kopano/lab -> target
+      # Linux packages are not code signed; a future repository (apt/rpm) would sign its index.
+      - name: Build and package (AppImage, deb, rpm, tar.gz)
+        run: ubunye/packaging/linux/collab-package.sh kopano-src/research/kopano/lab
+      - name: Check the packages hold kopanod
+        run: |
+          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/kopanod$'
+          dpkg-deb --info dist/release/*.deb | grep -i prerm
+          tar -tzf dist/release/*.tar.gz | grep -E '/bin/kopanod$'
+          for a in dist/release/*.AppImage; do
+            chmod +x "$a"
+            (cd "$RUNNER_TEMP" && APPIMAGE_EXTRACT_AND_RUN=1 "$OLDPWD/$a" --appimage-extract >/dev/null && test -x squashfs-root/usr/bin/kopanod)
+          done
+          # install, first start of the service, remove (the unit and the process go)
+          sudo apt-get install -y ./dist/release/*.deb
+          /usr/bin/kopanod init | tail -1
+          (/usr/bin/kopanod run --api-port 18590 >"$RUNNER_TEMP/k.log" 2>&1 &)
+          sleep 2
+          /usr/bin/kopanod call --api-port 18590 --json '{"op":"hello"}' | grep '"signed_in":false'
+          sudo apt-get remove -y lightcraft
+          sleep 1
+          if pgrep -f '^/usr/bin/kopanod '; then echo "kopanod still running after remove"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubunye-light-collab-linux-x86_64
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14

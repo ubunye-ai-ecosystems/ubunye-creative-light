@@ -12,6 +12,7 @@
 #   MACOS_KEYCHAIN        keychain holding the identity (optional)
 # Notarization (env; all three needed, and a real identity):
 #   APPLE_ID, APPLE_PASSWORD (app-specific password), APPLE_TEAM_ID
+# Modified by Ubunye AI Ecosystems, 2026 (UBUNYE_EXTRA_BIN_DIR hook for ThabangVision collaboration).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -102,6 +103,16 @@ echo "==> assembling $APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # Executable and icon carry the display name (CFBundleExecutable / CFBundleIconFile).
 cp "$WORK/bin/lightcraft" "$APP/Contents/MacOS/LightCraft"
+# Ubunye: programs shipped beside Light (kopanod, ThabangVision collaboration), set by
+# ubunye/packaging/macos/collab-package.sh; none otherwise. Signed below, before the app.
+EXTRA_BINS=()
+if [ -n "${UBUNYE_EXTRA_BIN_DIR:-}" ]; then
+  for x in "$UBUNYE_EXTRA_BIN_DIR"/*; do
+    [ -f "$x" ] || continue
+    EXTRA_BINS+=("$(basename "$x")")
+    cp "$x" "$APP/Contents/MacOS/"
+  done
+fi
 cp "$ROOT/assets/app-icon/lightcraft.icns" "$APP/Contents/Resources/LightCraft.icns"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
   -e "s/@BUILD_SHA@/${LIGHTCRAFT_BUILD_SHA:-unknown}/g" \
@@ -114,6 +125,7 @@ copy_docs "$APP/Contents/Resources/Licenses"
 
 # Sign inside-out: nested code first, then the bundle itself (no --deep on the final signature).
 # Today the only nested code is the main executable; frameworks/helpers would be signed here too.
+for x in ${EXTRA_BINS[@]+"${EXTRA_BINS[@]}"}; do sign --options runtime "$APP/Contents/MacOS/$x"; done
 sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP/Contents/MacOS/LightCraft"
 sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP"
 codesign --verify --strict --deep --verbose=2 "$APP"

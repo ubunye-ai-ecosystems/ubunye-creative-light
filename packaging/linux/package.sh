@@ -13,6 +13,7 @@
 # (downloaded into $CARGO_TARGET_DIR if missing). Build on an old distro (CI: Ubuntu 22.04,
 # glibc 2.35) so the binaries run on newer ones. Optional: desktop-file-validate, appstreamcli,
 # zsyncmake (the zsync package) for the AppImage's .zsync.
+# Modified by Ubunye AI Ecosystems, 2026 (UBUNYE_EXTRA_BIN_DIR and UBUNYE_LINUX_PREREMOVE hooks).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -52,6 +53,16 @@ rm -rf "$WORK"
 # ---- stage an FHS tree (shared by every format) -------------------------------------------------
 install -Dm755 "$BIN/lightcraft" "$STAGE/usr/bin/lightcraft"
 install -Dm755 "$BIN/lightcraft-cli" "$STAGE/usr/bin/lightcraft-cli"
+# Ubunye: programs shipped beside Light (kopanod, ThabangVision collaboration), set by
+# ubunye/packaging/linux/collab-package.sh; none otherwise. In every format below.
+EXTRA_BINS=()
+if [ -n "${UBUNYE_EXTRA_BIN_DIR:-}" ]; then
+  for x in "$UBUNYE_EXTRA_BIN_DIR"/*; do
+    [ -f "$x" ] || continue
+    EXTRA_BINS+=("$(basename "$x")")
+    install -Dm755 "$x" "$STAGE/usr/bin/$(basename "$x")"
+  done
+fi
 strip "$STAGE/usr/bin/lightcraft" "$STAGE/usr/bin/lightcraft-cli" 2>/dev/null || true
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 install -Dm644 "$HERE/$APP_ID.mime.xml" "$STAGE/usr/share/mime/packages/$APP_ID.xml"
@@ -87,6 +98,13 @@ if has deb || has rpm; then
   export NFPM_ARCH="$DEB_ARCH"
   # nfpm expands env vars in fields like `version` and `arch`, but not in `contents[].src`.
   sed "s|\${STAGE}|$STAGE|g" "$HERE/nfpm.yaml" >"$WORK/nfpm.yaml"
+  # Ubunye: the extra programs, and the script that stops them before removal.
+  for x in ${EXTRA_BINS[@]+"${EXTRA_BINS[@]}"}; do
+    awk -v l="  - { src: $STAGE/usr/bin/$x, dst: /usr/bin/$x, file_info: { mode: 0755 } }" '{ print } /^contents:/ { print l }'       "$WORK/nfpm.yaml" >"$WORK/nfpm.yaml.new" && mv "$WORK/nfpm.yaml.new" "$WORK/nfpm.yaml"
+  done
+  if [ -n "${UBUNYE_LINUX_PREREMOVE:-}" ]; then
+    awk -v l="  preremove: $UBUNYE_LINUX_PREREMOVE" '{ print } /^scripts:/ { print l }'       "$WORK/nfpm.yaml" >"$WORK/nfpm.yaml.new" && mv "$WORK/nfpm.yaml.new" "$WORK/nfpm.yaml"
+  fi
   for fmt in deb rpm; do
     if has "$fmt"; then (cd "$ROOT" && nfpm package -f "$WORK/nfpm.yaml" -p "$fmt" -t "$DIST/$BASENAME.$fmt"); fi
   done

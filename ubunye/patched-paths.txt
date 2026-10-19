@@ -139,3 +139,4 @@ packaging/windows/sign.ps1
 README.md
 crates/engine/src/cmd/query.rs
 apps/lightcraft/src/control_server.rs
+packaging/windows/package.ps1
