@@ -18,6 +18,7 @@
 //! On Windows, release builds are GUI-subsystem programs: launching the app opens no console
 //! window (issue #7). Their `--help` / `--version` output and diagnostics then have no console to
 //! go to; use `lightcraft-cli` (a console program) from a terminal, or a debug build.
+// Modified by Ubunye AI Ecosystems, 2026.
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -790,6 +791,8 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
+            // Ubunye: Kopano's Share / Join reach this window through the control port
+            app.kopano.start_control = Some(control_server::on_demand(control_port, cc.egui_ctx.clone()));
             if let Some(mut p) = problem {
                 // imported once the user has chosen where (into the library, or the temporary session)
                 p.pending_import = files;

@@ -1,5 +1,6 @@
 //! UI-level commands (views, panels, zoom, tools, dialogs) and the menu model shared by the native
 //! menu bar, the shortcut handler and the control channel.
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -139,6 +140,12 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.photoCounts", "Show Photo Counts", None, "View"),
     ("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "View"),
     ("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window"),
+    // Ubunye: ThabangVision collaboration (the Kopano protocol; `ubunye::kopano_panel`)
+    ("kopano.panel", "Share & Collaborate", None, "Window"),
+    ("kopano.share", "Share This Library", None, ""),
+    ("kopano.join", "Join a Shared Library", None, ""),
+    ("kopano.signIn", "Sign in with ThabangVision", None, ""),
+    ("kopano.status", "Collaboration Status", None, ""),
     ("tool.keywordPainter", "Keyword Painter", None, ""),
     ("view.gridInfo", "Grid Info", None, ""),
     ("dialog.allMetadata", "All Metadata…", None, "Photo"),
@@ -270,6 +277,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         // the app's own context: a fresh one's repaints reach no window and its clock starts at zero
         let ctx = app.tasks.repaint.clone().unwrap_or_default();
         return Some(crate::lightroom_import::command(app, id, p, &ctx));
+    }
+    if let Some(r) = crate::ubunye::kopano_panel::command(app, id, p) {
+        return Some(r);
     }
     if let Some(language) = language_from_command(id) {
         app.ui.language = language;

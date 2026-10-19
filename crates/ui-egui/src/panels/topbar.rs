@@ -1,4 +1,5 @@
 //! The top bar: sidebar toggle, back/forward, search, filter, and the right-hand icons.
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use egui::{Align2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::json;
@@ -187,6 +188,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
                 x -= 40.0;
             }
+            // Ubunye: Share & Collaborate (ThabangVision collaboration)
+            crate::ubunye::kopano_panel::toolbar_button(app, ui, Rect::from_center_size(pos2(x, full.center().y), vec2(28.0, 28.0)));
             let _ = Align2::CENTER_CENTER;
         });
 }
