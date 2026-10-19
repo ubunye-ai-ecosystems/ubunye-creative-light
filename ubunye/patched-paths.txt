@@ -137,3 +137,4 @@ packaging/macos/package.sh
 packaging/windows/lightcraft.wxs
 packaging/windows/sign.ps1
 README.md
+crates/engine/src/cmd/query.rs
