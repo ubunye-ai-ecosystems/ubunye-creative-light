@@ -793,6 +793,7 @@ fn main() -> eframe::Result {
             }
             // Ubunye: Kopano's Share / Join reach this window through the control port
             app.kopano.start_control = Some(control_server::on_demand(control_port, cc.egui_ctx.clone()));
+            app.kopano.control_port = control_port;
             if let Some(mut p) = problem {
                 // imported once the user has chosen where (into the library, or the temporary session)
                 p.pending_import = files;

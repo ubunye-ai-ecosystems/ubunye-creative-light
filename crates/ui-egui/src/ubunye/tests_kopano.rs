@@ -94,11 +94,11 @@ fn events_read_as_plain_words() {
             "Your changes and Member1's were put together · 3 clashes",
             "Up to date with Member1",
             "Member1 went offline",
-            "Collaboration could not reach this window: control port closed",
+            "Lost touch with this window for a moment; it reconnects by itself",
         ]
     );
     assert_eq!(s.projects[0].head.as_deref(), Some("abcd"));
-    assert_eq!(s.projects[0].teammates, [Teammate { device: M1.into(), name: Some("Member1".into()), online: false }]);
+    assert_eq!(s.projects[0].teammates, [Teammate { device: M1.into(), account: None, name: Some("Member1".into()), online: false }]);
     // an unknown teammate is named by the short device id
     s.apply_event(&json!({"event": "teammate", "project": PID, "device": NEW_PID, "online": true}), 9000.0);
     assert_eq!(s.activity[0].said.text(), "bb11bb22 is online");
@@ -146,7 +146,7 @@ fn time_ago_in_plain_words() {
 fn status_names_teammates_and_leaves_me_out() {
     let mut s = state_with_project();
     s.apply_status(PID, &json!({"head": "ff00", "teammates": [M1, ALICE], "online": {M1: "Member1"}}));
-    assert_eq!(s.projects[0].teammates, [Teammate { device: M1.into(), name: Some("Member1".into()), online: true }]);
+    assert_eq!(s.projects[0].teammates, [Teammate { device: M1.into(), account: None, name: Some("Member1".into()), online: true }]);
     // later the teammate is offline: the name stays
     s.apply_status(PID, &json!({"head": "ff00", "teammates": [M1], "online": {}}));
     assert_eq!(s.projects[0].teammates[0].label(), "Member1");
@@ -174,8 +174,16 @@ fn ids_are_checked() {
 
 // ---- a fake kopanod over loopback TCP ------------------------------------------------------
 
+#[derive(Default)]
+struct FakeData {
+    /// The Light control port the project is bound to (0: none); `attach` changes it.
+    app_port: AtomicUsize,
+    signed_out: AtomicBool,
+}
+
 struct Fake {
     got: Arc<Mutex<Vec<Value>>>,
+    data: Arc<FakeData>,
     stop: Arc<AtomicBool>,
     accept: Option<std::thread::JoinHandle<()>>,
 }
@@ -186,14 +194,15 @@ impl Fake {
         listener.set_nonblocking(true).unwrap();
         let got: Arc<Mutex<Vec<Value>>> = Arc::default();
         let stop = Arc::new(AtomicBool::new(false));
-        let (g, st) = (got.clone(), stop.clone());
+        let data: Arc<FakeData> = Arc::default();
+        let (g, st, ap) = (got.clone(), stop.clone(), data.clone());
         let accept = std::thread::spawn(move || {
             let mut workers = vec![];
             while !st.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((c, _)) => {
-                        let (g, st) = (g.clone(), st.clone());
-                        workers.push(std::thread::spawn(move || serve(c, &g, &st)));
+                        let (g, st, ap) = (g.clone(), st.clone(), ap.clone());
+                        workers.push(std::thread::spawn(move || serve(c, &g, &st, &ap)));
                     }
                     Err(_) => std::thread::sleep(Duration::from_millis(10)),
                 }
@@ -202,7 +211,7 @@ impl Fake {
                 let _ = w.join();
             }
         });
-        Fake { got, stop, accept: Some(accept) }
+        Fake { got, data, stop, accept: Some(accept) }
     }
 
     fn stop(&mut self) {
@@ -223,7 +232,8 @@ impl Drop for Fake {
     }
 }
 
-fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool) {
+fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool, data: &FakeData) {
+    let app_port = &data.app_port;
     c.set_nonblocking(false).unwrap();
     c.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
     let mut w = c.try_clone().unwrap();
@@ -247,7 +257,7 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool) {
                 let _ = writeln!(w, "{}", json!({"ok": true, "result": "subscribed"}));
                 for ev in [
                     json!({"event": "teammate", "project": PID, "device": M1, "name": "Member1", "online": true}),
-                    json!({"event": "synced", "project": PID, "from": "Member1", "how": "fast-forward", "clashes": 0, "head": "1234"}),
+                    json!({"event": "synced", "project": PID, "from": "Member1", "how": "fast-forward", "clashes": 0, "photos": 2, "head": "1234"}),
                 ] {
                     let _ = writeln!(w, "{ev}");
                 }
@@ -256,9 +266,18 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool) {
                 }
                 return;
             }
-            "hello" => json!({"device": ALICE, "name": "Alice", "account": "acct-alice", "projects": [{"id": PID, "name": "Shoot"}]}),
-            "status" => json!({"head": "1234abcd", "items": 5, "teammates": [M1], "online": {M1: "Member1"}}),
-            "create-project" => json!({"project": NEW_PID, "head": "99", "items": 5}),
+            "hello" => {
+                json!({"device": ALICE, "name": "Alice", "account": "acct-alice", "signed_in": !data.signed_out.load(Ordering::SeqCst), "signed_in_until_ms": 1.8e12,
+                "projects": [{"id": PID, "name": "Shoot", "app": app(app_port)}]})
+            }
+            "status" => json!({"head": "1234abcd", "name": "Shoot", "app": app(app_port),
+                "teammates": [{"device": M1, "name": "Member1", "account": "acct-m1", "online": true}], "online": {M1: "Member1"},
+                "members": [{"account": "acct-alice", "role": "editor", "owner": true}, {"account": "acct-m1", "role": "editor", "owner": false}]}),
+            "create-project" => json!({"project": NEW_PID, "head": "99", "items": 15, "photos": 5}),
+            "attach" => {
+                app_port.store(req["app"]["port"].as_u64().unwrap_or(0) as usize, Ordering::SeqCst);
+                json!("attached")
+            }
             "join" => json!({"project": req["project"]}),
             _ => {
                 let _ = writeln!(w, "{}", json!({"ok": false, "error": "unknown op"}));
@@ -266,6 +285,13 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool) {
             }
         };
         let _ = writeln!(w, "{}", json!({"ok": true, "result": result}));
+    }
+}
+
+fn app(port: &AtomicUsize) -> Value {
+    match port.load(Ordering::SeqCst) {
+        0 => json!({"kind": "toy"}),
+        p => json!({"kind": "light-control", "port": p}),
     }
 }
 
@@ -296,7 +322,7 @@ fn client_follows_a_fake_service_and_finds_it_again_after_a_restart() {
         let s = client.state();
         s.running && s.me.as_ref().is_some_and(|m| m.name == "Alice") && s.projects.first().is_some_and(|p| p.teammates.iter().any(|t| t.online))
     });
-    wait("events", T, || client.state().activity.iter().any(|a| a.said.text() == "Member1 changed photos"));
+    wait("events", T, || client.state().activity.iter().any(|a| a.said.text() == "Member1 changed 2 photos"));
     let s = client.state();
     assert_eq!(s.projects[0].name, "Shoot");
     assert_eq!(s.projects[0].teammates[0].label(), "Member1");
@@ -313,7 +339,7 @@ fn client_follows_a_fake_service_and_finds_it_again_after_a_restart() {
     let job = client.state().job.unwrap();
     assert!(job.ok, "{job:?}");
     assert_eq!(job.project.as_deref(), Some(NEW_PID));
-    assert!(job.text.starts_with("Shared. Until invites"), "{}", job.text);
+    assert!(job.text.starts_with("Shared 5 photos. Until invites"), "{}", job.text);
     let made = fake.requests("create-project");
     assert_eq!(made.len(), 1);
     assert_eq!(made[0]["app"], json!({"kind": "light-control", "port": 18123}));
@@ -415,9 +441,10 @@ fn window_says_when_collaboration_is_not_running() {
 
 #[test]
 fn without_a_sign_in_the_window_offers_one() {
-    // no certificate in the folder: not signed in to ThabangVision
-    let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
-    let mut h = app_with(Config { port, home: Some(temp_home()) });
+    // the service runs, but this computer is not signed in to ThabangVision (or it ran out)
+    let (fake, config, _home) = fake_service();
+    fake.data.signed_out.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
     ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
     assert!(h.step_until(T, |h| painted(h).contains("Sign in with ThabangVision")), "{}", painted(&h));
     ok(h.request("ui.clickWidget", json!({"id": "button:kopano-signIn"}), T));
@@ -439,7 +466,10 @@ fn window_shares_through_its_fields_and_starts_the_control_port_on_demand() {
     assert!(
         h.step_until(T, |h| {
             let p = painted(h);
-            p.contains("Signed in to ThabangVision as Alice") && p.contains("Member1") && p.contains("online") && p.contains("Member1 changed photos")
+            p.contains("Signed in to ThabangVision as Alice")
+                && p.contains("Member1")
+                && p.contains("online")
+                && p.contains("Member1 changed 2 photos")
         }),
         "{}",
         painted(&h)
@@ -459,7 +489,7 @@ fn window_shares_through_its_fields_and_starts_the_control_port_on_demand() {
     type_into(&mut h, "kopano:shareName", "Owner shoot");
     type_into(&mut h, "kopano:shareAccount", "acct-m1");
     ok(h.request("ui.clickWidget", json!({"id": "button:kopano-share"}), T));
-    assert!(h.step_until(T, |h| painted(h).contains("Shared. Until invites")), "{}", painted(&h));
+    assert!(h.step_until(T, |h| painted(h).contains("Shared 5 photos. Until invites")), "{}", painted(&h));
     let made = fake.requests("create-project");
     assert_eq!(made.len(), 1, "{made:?}");
     assert_eq!(made[0]["name"], "Owner shoot");
@@ -484,4 +514,105 @@ fn share_without_a_control_port_says_how_to_get_one() {
     assert!(r["error"].as_str().unwrap().contains("--control"), "{r}");
     let r = h.request("engine.execute", json!({"command": "kopano.share", "params": {"name": "", "account": "acct-m1"}}), T);
     assert!(r["error"].as_str().unwrap().contains("name"), "{r}");
+}
+
+#[test]
+fn new_status_keeps_names_accounts_members_and_the_app_port() {
+    let mut s = State::default();
+    s.apply_hello(&json!({"device": ALICE, "name": "Alice", "account": "acct-alice", "signed_in": true, "signed_in_until_ms": 1.5e12,
+        "projects": [{"id": PID, "name": "Shoot", "app": {"kind": "light-control", "port": 18101}}]}));
+    assert!(s.signed_in);
+    assert_eq!(s.signed_in_until_ms, Some(1.5e12));
+    assert_eq!(s.projects[0].app_port, Some(18101));
+    // an offline teammate keeps the name the service gives
+    s.apply_status(
+        PID,
+        &json!({"head": "ab", "name": "Shoot", "app": {"kind": "light-control", "port": 18101},
+        "teammates": [{"device": M1, "name": "Member1", "account": "acct-m1", "online": false}], "online": {},
+        "members": [{"account": "acct-alice", "role": "editor", "owner": true}]}),
+    );
+    let t = &s.projects[0].teammates[0];
+    assert_eq!((t.label(), t.account.as_deref(), t.online), ("Member1".to_string(), Some("acct-m1"), false));
+    assert_eq!(s.projects[0].members, [Member { account: "acct-alice".into(), role: "editor".into(), owner: true }]);
+    // status moves the port (after an attach): its liveness is unknown again
+    s.projects[0].app_alive = Some(false);
+    s.apply_status(PID, &json!({"app": {"kind": "light-control", "port": 18555}, "teammates": []}));
+    assert_eq!((s.projects[0].app_port, s.projects[0].app_alive), (Some(18555), None));
+    assert_eq!(app_port(Some(&json!({"kind": "toy"}))), None);
+    assert_eq!(app_port(Some(&json!({"kind": "light-control", "port": 70000}))), None);
+}
+
+#[test]
+fn records_say_which_libraries_this_library_holds() {
+    let home = temp_home();
+    let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<std::collections::BTreeSet<_>>();
+    assert!(read_record(&home, PID).is_empty());
+    write_record(&home, PID, &set(&["a", "b", "c", "d"])).unwrap();
+    assert_eq!(read_record(&home, PID), set(&["a", "b", "c", "d"]));
+    assert!(holds(&read_record(&home, PID), &set(&["a", "b", "x"])));
+    assert!(!holds(&read_record(&home, PID), &set(&["a", "x"])));
+    assert!(!holds(&set(&[]), &set(&["a"])));
+    // a bad id never becomes a path
+    assert!(write_record(&home, "../evil", &set(&["a"])).is_err());
+    std::fs::write(record_path(&home, PID).unwrap(), "junk").unwrap();
+    assert!(read_record(&home, PID).is_empty());
+}
+
+fn our_keys(h: &crate::headless::Headless) -> std::collections::BTreeSet<String> {
+    h.app
+        .session
+        .catalog
+        .photos()
+        .filter(|p| !p.deleted && !p.local && p.copy_of.is_none())
+        .map(|p| p.content_hash.clone().unwrap_or_else(|| format!("{}|{}", p.file_name, p.captured.as_deref().unwrap_or_default())))
+        .collect()
+}
+
+#[test]
+fn after_a_restart_the_window_links_its_shared_library_again() {
+    let (fake, config, home) = fake_service();
+    // the library was bound to a port nobody answers on any more (Light restarted)
+    let dead = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    fake.data.app_port.store(usize::from(dead), Ordering::SeqCst);
+    let mut h = app_with(config);
+    h.app.kopano.control_port = Some(18777);
+    // this library holds the shared library's photos
+    let ours = our_keys(&h);
+    assert!(!ours.is_empty());
+    write_record(&home, PID, &ours).unwrap();
+    // with the window closed: the background work does it
+    assert!(h.step_until(T, |_| fake.data.app_port.load(Ordering::SeqCst) == 18777), "attach not sent: {:?}", fake.requests("attach"));
+    assert_eq!(fake.requests("attach")[0]["app"], json!({"kind": "light-control", "port": 18777}));
+    assert!(h.step_until(T, |h| h.app.kopano.client.state().activity.iter().any(|a| a.said.text() == "This window is linked to Shoot again")));
+    assert_eq!(read_record(&home, PID), ours);
+    for _ in 0..50 {
+        h.step();
+    }
+    assert_eq!(fake.requests("attach").len(), 1, "attached once");
+}
+
+#[test]
+fn a_dead_port_of_a_library_this_one_does_not_hold_is_left_alone() {
+    let (fake, config, home) = fake_service();
+    let dead = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    fake.data.app_port.store(usize::from(dead), Ordering::SeqCst);
+    write_record(&home, PID, &["someone-else|2020".to_string()].into_iter().collect()).unwrap();
+    let mut h = app_with(config);
+    h.app.kopano.control_port = Some(18778);
+    assert!(h.step_until(T, |h| h.app.kopano.client.state().projects.first().is_some_and(|p| p.app_alive == Some(false))));
+    for _ in 0..200 {
+        h.step();
+    }
+    assert!(fake.requests("attach").is_empty());
+}
+
+#[test]
+fn errors_about_the_old_port_right_after_relinking_are_not_shown() {
+    let mut s = state_with_project();
+    s.note(Some(PID.into()), Said::Reattached { name: "Shoot".into() }, 1000.0);
+    s.apply_event(&json!({"event": "app", "project": PID, "error": "port 18101 refused"}), 5000.0);
+    assert_eq!(s.activity.len(), 1);
+    // later trouble shows again
+    s.apply_event(&json!({"event": "app", "project": PID, "error": "port 18103 refused"}), 1000.0 + RELINK_QUIET_MS + 1.0);
+    assert_eq!(s.activity[0].said.text(), "Lost touch with this window for a moment; it reconnects by itself");
 }

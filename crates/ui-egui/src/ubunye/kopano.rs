@@ -27,6 +27,8 @@ pub const DEFAULT_API_PORT: u16 = 47100;
 pub const POLL_MS: u64 = 3000;
 /// Recent activity lines kept (newest first).
 pub const ACTIVITY_KEEP: usize = 40;
+/// After an `attach`, the service's errors about the old port are stale for this long (ms).
+pub const RELINK_QUIET_MS: f64 = 15000.0;
 /// What the panel says when the service doesn't answer.
 pub const NOT_RUNNING: &str = "Collaboration is not running on this computer";
 /// Longest line read from the service (its replies and events are small JSON objects).
@@ -106,6 +108,7 @@ pub struct Me {
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Teammate {
     pub device: String,
+    pub account: Option<String>,
     /// Known once they were online (the service names offline teammates by device id only).
     pub name: Option<String>,
     pub online: bool,
@@ -124,6 +127,19 @@ pub struct Project {
     pub name: String,
     pub head: Option<String>,
     pub teammates: Vec<Teammate>,
+    /// The Light control port the service drives this project through (`light-control` only).
+    pub app_port: Option<u16>,
+    /// Something answers on `app_port` (checked by the poll thread; `None` = not checked).
+    pub app_alive: Option<bool>,
+    pub members: Vec<Member>,
+}
+
+/// Who may join a project (from `status`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Member {
+    pub account: String,
+    pub role: String,
+    pub owner: bool,
 }
 
 /// What happened, kept as data so the UI words it at display time.
@@ -150,6 +166,10 @@ pub enum Said {
         who: String,
         clashes: usize,
     },
+    /// This window was linked to a shared library again (Light had restarted on a new port).
+    Reattached {
+        name: String,
+    },
     /// Both sides ended up with the same photos.
     UpToDate {
         who: String,
@@ -172,7 +192,9 @@ impl Said {
             Said::Merged { who, clashes: 1 } => format!("Your changes and {who}'s were put together · 1 clash"),
             Said::Merged { who, clashes } => format!("Your changes and {who}'s were put together · {clashes} clashes"),
             Said::UpToDate { who } => format!("Up to date with {who}"),
-            Said::AppProblem { error } => format!("Collaboration could not reach this window: {error}"),
+            Said::Reattached { name } => format!("This window is linked to {name} again"),
+            // the service's own words stay in `kopano.status` and the log, not on screen
+            Said::AppProblem { .. } => "Lost touch with this window for a moment; it reconnects by itself".to_string(),
         }
     }
 }
@@ -214,8 +236,10 @@ pub struct State {
     pub started: bool,
     /// The service answered the last poll.
     pub running: bool,
-    /// This computer has a ThabangVision sign-in (a device certificate in the service's folder).
+    /// This computer is signed in to ThabangVision (the service's `hello`).
     pub signed_in: bool,
+    /// Until when (wall-clock ms), when the service says.
+    pub signed_in_until_ms: Option<f64>,
     /// Why it isn't running, or what went wrong talking to it (plain words).
     pub problem: Option<String>,
     pub me: Option<Me>,
@@ -251,17 +275,21 @@ impl State {
     pub fn apply_hello(&mut self, v: &Value) {
         let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
         self.me = Some(Me { device: s("device"), name: s("name"), account: s("account") });
+        self.signed_in = v.get("signed_in").and_then(Value::as_bool).unwrap_or(false);
+        self.signed_in_until_ms = v.get("signed_in_until_ms").and_then(Value::as_f64);
         let mut projects = Vec::new();
         for p in v.get("projects").and_then(Value::as_array).into_iter().flatten() {
             let Some(id) = p.get("id").and_then(Value::as_str) else { continue };
             let name = p.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
             // keep what the last status said until the next one
-            let old = self.projects.iter().find(|o| o.id == id).cloned();
+            let old = self.projects.iter().find(|o| o.id == id).cloned().unwrap_or_default();
+            let app_port = app_port(p.get("app"));
             projects.push(Project {
                 id: id.to_string(),
                 name,
-                head: old.as_ref().and_then(|o| o.head.clone()),
-                teammates: old.map(|o| o.teammates).unwrap_or_default(),
+                app_alive: if app_port == old.app_port { old.app_alive } else { None },
+                app_port,
+                ..old
             });
         }
         projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
@@ -270,7 +298,7 @@ impl State {
 
     /// Take the reply to `status {project}`.
     pub fn apply_status(&mut self, project: &str, v: &Value) {
-        let online: BTreeMap<String, String> = v
+        let mut online: BTreeMap<String, String> = v
             .get("online")
             .and_then(Value::as_object)
             .map(|o| o.iter().map(|(d, n)| (d.clone(), n.as_str().unwrap_or_default().to_string())).collect())
@@ -281,8 +309,22 @@ impl State {
             }
         }
         let mine = self.me.as_ref().map(|m| m.device.clone()).unwrap_or_default();
-        let mut devices: Vec<String> =
-            v.get("teammates").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+        // teammates: device ids (older services) or {device, name, account, online}
+        let mut accounts: BTreeMap<String, String> = BTreeMap::new();
+        let mut devices: Vec<String> = Vec::new();
+        for t in v.get("teammates").and_then(Value::as_array).into_iter().flatten() {
+            let Some(d) = t.as_str().or_else(|| t.get("device").and_then(Value::as_str)) else { continue };
+            if let Some(n) = t.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) {
+                self.names.insert(d.to_string(), n.to_string());
+            }
+            if let Some(a) = t.get("account").and_then(Value::as_str) {
+                accounts.insert(d.to_string(), a.to_string());
+            }
+            if t.get("online").and_then(Value::as_bool) == Some(true) && !online.contains_key(d) {
+                online.insert(d.to_string(), self.names.get(d).cloned().unwrap_or_default());
+            }
+            devices.push(d.to_string());
+        }
         for d in online.keys() {
             if !devices.contains(d) {
                 devices.push(d.clone());
@@ -290,12 +332,35 @@ impl State {
         }
         devices.retain(|d| *d != mine);
         let names = &self.names;
-        let teammates =
-            devices.iter().map(|d| Teammate { device: d.clone(), name: names.get(d).cloned(), online: online.contains_key(d) }).collect::<Vec<_>>();
+        let teammates = devices
+            .iter()
+            .map(|d| Teammate { device: d.clone(), account: accounts.get(d).cloned(), name: names.get(d).cloned(), online: online.contains_key(d) })
+            .collect::<Vec<_>>();
         let head = v.get("head").and_then(Value::as_str).map(str::to_string);
+        let members: Vec<Member> = v
+            .get("members")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|m| {
+                Some(Member {
+                    account: m.get("account")?.as_str()?.to_string(),
+                    role: m.get("role").and_then(Value::as_str).unwrap_or("editor").to_string(),
+                    owner: m.get("owner").and_then(Value::as_bool).unwrap_or(false),
+                })
+            })
+            .collect();
+        let port = v.get("app").map(|a| app_port(Some(a)));
         if let Some(p) = self.projects.iter_mut().find(|p| p.id == project) {
             p.teammates = teammates;
             p.head = head;
+            p.members = members;
+            if let Some(port) = port
+                && port != p.app_port
+            {
+                p.app_port = port;
+                p.app_alive = None;
+            }
         }
     }
 
@@ -317,7 +382,7 @@ impl State {
                             t.online = online;
                             t.name = name.or(t.name.take());
                         }
-                        None => p.teammates.push(Teammate { device: device.to_string(), name, online }),
+                        None => p.teammates.push(Teammate { device: device.to_string(), account: None, name, online }),
                     }
                 }
                 let who = self.name_of(device);
@@ -340,6 +405,15 @@ impl State {
             }
             Some("app") => {
                 let error = s("error").unwrap_or("unknown problem").to_string();
+                log::info!("collaboration: the service could not reach this window: {error}");
+                // the service's last try at the old port, just after this window linked it again
+                let just_linked = self
+                    .activity
+                    .iter()
+                    .any(|a| a.project == project && matches!(a.said, Said::Reattached { .. }) && now_ms - a.at_ms < RELINK_QUIET_MS);
+                if just_linked {
+                    return;
+                }
                 self.note(project, Said::AppProblem { error }, now_ms);
             }
             _ => {}
@@ -354,6 +428,44 @@ impl State {
             p.head = Some(h.to_string());
         }
     }
+}
+
+/// The control port of a `light-control` app binding (`{"kind": "light-control", "port": N}`).
+pub fn app_port(app: Option<&Value>) -> Option<u16> {
+    let a = app?;
+    if a.get("kind").and_then(Value::as_str) != Some("light-control") {
+        return None;
+    }
+    a.get("port").and_then(Value::as_u64).and_then(|p| u16::try_from(p).ok()).filter(|p| *p != 0)
+}
+
+/// Where this app remembers which photos a shared library holds, so that after a restart on a
+/// new control port it knows which libraries are its own (`<home>/light/<project>.json`).
+pub fn record_path(home: &Path, project: &str) -> Option<PathBuf> {
+    is_hex_id(project).then(|| home.join("light").join(format!("{project}.json")))
+}
+
+pub fn write_record(home: &Path, project: &str, photos: &std::collections::BTreeSet<String>) -> Result<(), String> {
+    let f = record_path(home, project).ok_or("not a project id")?;
+    if let Some(dir) = f.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = f.with_extension("json.tmp");
+    std::fs::write(&tmp, json!({"photos": photos}).to_string()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &f).map_err(|e| e.to_string())
+}
+
+/// The photos recorded for `project` (content hashes); empty when there is no readable record.
+pub fn read_record(home: &Path, project: &str) -> std::collections::BTreeSet<String> {
+    let Some(f) = record_path(home, project) else { return Default::default() };
+    let Ok(text) = std::fs::read_to_string(f) else { return Default::default() };
+    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    v.get("photos").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect()
+}
+
+/// This library holds a shared library when at least half of the photos recorded for it are here.
+pub fn holds(recorded: &std::collections::BTreeSet<String>, ours: &std::collections::BTreeSet<String>) -> bool {
+    !recorded.is_empty() && recorded.intersection(ours).count().saturating_mul(2) >= recorded.len()
 }
 
 /// How many photos an event says changed (`photos`), if it says.
@@ -423,6 +535,8 @@ impl Client {
     pub fn request(&mut self, _ctx: &egui::Context, _busy: &str, _req: Value) -> Result<(), String> {
         Err("Collaboration works in the desktop app only.".to_string())
     }
+
+    pub fn attach(&mut self, _ctx: &egui::Context, _project: &str, _name: &str, _port: u16) {}
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -491,8 +605,6 @@ mod native {
 
     /// Ask `hello` and every project's `status` once.
     pub fn poll_once(config: &Config, shared: &Shared) {
-        let signed_in = config.home.as_ref().is_some_and(|h| h.join("cert.json").is_file());
-        lock(shared).signed_in = signed_in;
         let r = (|| -> Result<(), String> {
             let mut c = connect(config, Duration::from_secs(5))?;
             let hello = call(&mut c, json!({"op": "hello"}))?;
@@ -505,6 +617,15 @@ mod native {
                 // one project's trouble doesn't hide the others
                 if let Ok(st) = call(&mut c, json!({"op": "status", "project": id})) {
                     lock(shared).apply_status(&id, &st);
+                }
+            }
+            // is a Light still answering where each project points? (a dead port after a restart)
+            let ports: Vec<(String, u16)> = lock(shared).projects.iter().filter_map(|p| Some((p.id.clone(), p.app_port?))).collect();
+            for (id, port) in ports {
+                let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+                let alive = TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok();
+                if let Some(p) = lock(shared).projects.iter_mut().find(|p| p.id == id && p.app_port == Some(port)) {
+                    p.app_alive = Some(alive);
                 }
             }
             Ok(())
@@ -573,6 +694,33 @@ mod native {
             }
         }
 
+        /// Point `project` at this window's control `port` again (`attach`), quietly: the outcome
+        /// is an activity line, not the Share / Join line.
+        pub fn attach(&mut self, ctx: &egui::Context, project: &str, name: &str, port: u16) {
+            self.start(ctx);
+            let (config, shared, repaint, wake) = (self.config.clone(), self.shared.clone(), ctx.clone(), self.wake.clone());
+            let req = json!({"op": "attach", "project": project, "app": {"kind": "light-control", "port": port}});
+            let (project, name) = (project.to_string(), name.to_string());
+            let _ = std::thread::Builder::new().name("kopano-attach".into()).spawn(move || {
+                let r = connect(&config, Duration::from_secs(20)).and_then(|mut c| call(&mut c, req));
+                let said = match r {
+                    Ok(_) => Said::Reattached { name },
+                    Err(error) => Said::AppProblem { error },
+                };
+                let mut s = lock(&shared);
+                if matches!(said, Said::Reattached { .. }) {
+                    // the trouble before (the old port) is over
+                    s.activity.retain(|a| !(a.project.as_deref() == Some(project.as_str()) && matches!(a.said, Said::AppProblem { .. })));
+                }
+                s.note(Some(project), said, crate::now_ms());
+                drop(s);
+                if let Some(w) = wake {
+                    let _ = w.send(());
+                }
+                repaint.request_repaint();
+            });
+        }
+
         /// Run one request (`create-project`, `join`…) on its own thread; the outcome lands in
         /// [`State::job`]. `busy` is what the panel says meanwhile.
         pub fn request(&mut self, ctx: &egui::Context, busy: &str, req: Value) -> Result<(), String> {
@@ -624,13 +772,19 @@ mod native {
 /// What the panel says once a Share or Join is done.
 pub fn job_done(op: &str, v: &Value) -> Job {
     match op {
-        "create-project" => Job {
-            busy: false,
-            ok: true,
-            // (the service counts items, three per photo: not a photo count)
-            text: "Shared. Until invites by username arrive, your teammate joins with the ids under Advanced (testing).".to_string(),
-            project: v.get("project").and_then(Value::as_str).map(str::to_string),
-        },
+        "create-project" => {
+            let shared = match v.get("photos").and_then(Value::as_u64) {
+                Some(1) => "Shared 1 photo".to_string(),
+                Some(n) => format!("Shared {n} photos"),
+                None => "Shared".to_string(),
+            };
+            Job {
+                busy: false,
+                ok: true,
+                text: format!("{shared}. Until invites by username arrive, your teammate joins with the ids under Advanced (testing)."),
+                project: v.get("project").and_then(Value::as_str).map(str::to_string),
+            }
+        }
         "join" => Job {
             busy: false,
             ok: true,

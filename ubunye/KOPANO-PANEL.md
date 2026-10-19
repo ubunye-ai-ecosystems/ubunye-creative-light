@@ -10,11 +10,11 @@ and writes Light through Light's control port.
 
 ## What the window shows
 
-- "Signed in to ThabangVision as <name>", or a "Sign in with ThabangVision" button when this
-  computer has no certificate yet (for now it says "Sign-in is coming soon"), or "Collaboration is
-  not running on this computer" with a plain hint
+- "Signed in to ThabangVision as <name>", or a "Sign in with ThabangVision" button when the
+  service says this computer is not signed in or the sign-in ran out (for now the button says
+  "Sign-in is coming soon"), or "Collaboration is not running on this computer" with a plain hint
 - the shared libraries, each with its teammates by name: a green dot when online, grey when not
-- recent activity, for example "Member1 changed photos · 3 s ago" or "Up to date with Alice"
+- recent activity, for example "Member1 changed 2 photos · 3 s ago" or "Up to date with Alice"
 - **Share this library**: a name and the teammate's ThabangVision account
 - **Advanced (testing)**: your device id and the project ids (with Copy), and Join by ids.
   ThabangVision invites by username will replace this part.
@@ -36,6 +36,13 @@ It opens from the Window menu and from the two-people button in the top bar.
 The service needs Light's control port. If Light was started with `--control PORT`, that port is
 used. If not, the first Share or Join starts Light's own control server on a free port on
 127.0.0.1 and gives that port to the service. Nothing listens until then.
+
+After a restart Light may be on another port. The service then points the shared library at a
+port nobody answers on. Every 2 s (window open or not) the desktop app checks for that: a
+shared library whose old port is dead and that this library holds (at least half of the photos
+recorded for it in `<service folder>/light/<id>.json` are here) is linked to this window again
+with the service's `attach`, and the activity says "This window is linked to <name> again".
+While it owns a shared library, the app keeps that record of its photos up to date.
 
 ## Defaults (the same as kopanod)
 

@@ -15,6 +15,7 @@
 //! the port; without it, the first Share or Join starts the control server on demand
 //! ([`StartControl`], supplied by the desktop app) and hands its port to the service.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::Receiver;
 
 use egui::{Color32, Pos2, Rect, RichText, Sense, Stroke, vec2};
@@ -51,6 +52,13 @@ pub struct KopanoPanel {
     pub share_account: String,
     pub join_project: String,
     pub join_from: String,
+    /// Shared libraries an `attach` was sent for (once each).
+    pub attached: BTreeSet<String>,
+    /// When the background work last ran, and this library's photos as last listed (wall ms).
+    last_tick: f64,
+    ours: (f64, BTreeSet<String>),
+    /// What was last written to each owned library's record.
+    recorded: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Default for KopanoPanel {
@@ -71,6 +79,10 @@ impl KopanoPanel {
             share_account: String::new(),
             join_project: String::new(),
             join_from: String::new(),
+            attached: BTreeSet::new(),
+            last_tick: f64::NEG_INFINITY,
+            ours: (f64::NEG_INFINITY, BTreeSet::new()),
+            recorded: BTreeMap::new(),
         }
     }
 }
@@ -245,7 +257,71 @@ fn press(app: &mut LightcraftApp, id: &str) {
     }
 }
 
+/// How often the background work runs, and how often this library's photos are listed again.
+const TICK_MS: f64 = 2000.0;
+const LIST_MS: f64 = 30000.0;
+
+/// This library's photos (as the service keys them), listed at most every 30 s.
+fn our_photos(app: &mut LightcraftApp, now: f64) -> BTreeSet<String> {
+    if now - app.kopano.ours.0 >= LIST_MS {
+        // the service's photo key: the content hash, else "file name|capture time" (virtual copies
+        // are left out: they live with their original)
+        let hashes = app
+            .session
+            .catalog
+            .photos()
+            .filter(|p| !p.deleted && !p.local && p.copy_of.is_none())
+            .map(|p| p.content_hash.clone().unwrap_or_else(|| format!("{}|{}", p.file_name, p.captured.as_deref().unwrap_or_default())))
+            .collect();
+        app.kopano.ours = (now, hashes);
+    }
+    app.kopano.ours.1.clone()
+}
+
+/// Background work each frame, open or not (only where the window can be reached: the desktop
+/// app): follow the service, remember which photos each library this window owns holds, and after
+/// a restart on a new port link the libraries this library holds back to this window (`attach`).
+pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
+    if app.kopano.start_control.is_none() && app.kopano.control_port.is_none() {
+        return;
+    }
+    let now = crate::now_ms();
+    if now - app.kopano.last_tick < TICK_MS {
+        return;
+    }
+    app.kopano.last_tick = now;
+    app.kopano.client.start(ctx);
+    let state = app.kopano.client.state();
+    let Some(home) = app.kopano.client.config.home.clone().filter(|_| state.running) else { return };
+    let mine = app.kopano.control_port;
+    for p in &state.projects {
+        let Some(port) = p.app_port else { continue };
+        if Some(port) == mine {
+            let ours = our_photos(app, now);
+            if app.kopano.recorded.get(&p.id) != Some(&ours) {
+                match kopano::write_record(&home, &p.id, &ours) {
+                    Ok(()) => {
+                        app.kopano.recorded.insert(p.id.clone(), ours);
+                    }
+                    Err(e) => log::warn!("collaboration: could not remember the photos of {}: {e}", p.name),
+                }
+            }
+        } else if p.app_alive == Some(false) && !app.kopano.attached.contains(&p.id) {
+            let ours = our_photos(app, now);
+            if !kopano::holds(&kopano::read_record(&home, &p.id), &ours) {
+                continue;
+            }
+            app.kopano.attached.insert(p.id.clone());
+            match control_port(app) {
+                Ok(port) => app.kopano.client.attach(ctx, &p.id, &p.name, port),
+                Err(error) => kopano::lock(&app.kopano.client.shared).note(Some(p.id.clone()), kopano::Said::AppProblem { error }, now),
+            }
+        }
+    }
+}
+
 pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
+    tick(app, ctx);
     if !app.kopano.open {
         return;
     }
@@ -280,9 +356,8 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
 fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
-    let me = state.me.as_ref().filter(|_| state.running);
-    match me {
-        Some(me) => {
+    match state.me.as_ref().filter(|_| state.running) {
+        Some(me) if state.signed_in => {
             ui.horizontal(|ui| {
                 dot(ui, true);
                 ui.label(
@@ -290,7 +365,8 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
                 );
             });
         }
-        None if !state.signed_in => {
+        // the service runs, but this computer's ThabangVision sign-in is missing or ran out
+        Some(_) => {
             dim(ui, crate::i18n::tr("Work on this library together with your team."));
             if text_button(ui, "kopano-signIn", "Sign in with ThabangVision", false).clicked() {
                 press(app, "kopano.signIn");
