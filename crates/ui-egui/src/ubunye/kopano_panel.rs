@@ -11,6 +11,11 @@
 //! `kopano.join` are what its buttons run, `kopano.signIn` is the sign-in button,
 //! `kopano.status` is what it shows (for agents and tests).
 //!
+//! Two ways to work, chosen when sharing: "Work together live" (every edit goes to everyone) and
+//! "I approve changes" (the default: teammates' edits wait in "Changes to review" until the
+//! owner approves them; `kopano.approve`, `kopano.decline`, `kopano.view`, `kopano.choose`,
+//! `kopano.setApprover`). Live clashes get a pick (`kopano.resolve`).
+//!
 //! The service reaches this window through Light's control port. With `--control PORT` that is
 //! the port; without it, the first Share or Join starts the control server on demand
 //! ([`StartControl`], supplied by the desktop app) and hands its port to the service.
@@ -50,6 +55,10 @@ pub struct KopanoPanel {
     pub control_port: Option<u16>,
     pub share_name: String,
     pub share_account: String,
+    /// "approve" (default) or "live": how the next Share works.
+    pub share_mode: String,
+    /// The owner's pick per clash before approving: (project, item key) -> "member" | "main".
+    pub choices: BTreeMap<(String, String), String>,
     pub join_project: String,
     pub join_from: String,
     /// Shared libraries an `attach` was sent for (once each).
@@ -77,6 +86,8 @@ impl KopanoPanel {
             control_port: None,
             share_name: String::new(),
             share_account: String::new(),
+            share_mode: "approve".to_string(),
+            choices: BTreeMap::new(),
             join_project: String::new(),
             join_from: String::new(),
             attached: BTreeSet::new(),
@@ -137,10 +148,41 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "kopano.share" => share(app, p),
         "kopano.join" => join(app, p),
+        "kopano.mode" => {
+            let m = text_param(p, "mode", "approve");
+            if m != "live" && m != "approve" {
+                return Some(Err("The way to work is live or approve".to_string()));
+            }
+            app.kopano.share_mode = m;
+            Ok(json!({"mode": app.kopano.share_mode}))
+        }
+        "kopano.approve" => review_op(app, "approve", p),
+        "kopano.decline" => review_op(app, "decline", p),
+        "kopano.view" => review_op(app, "view", p),
+        "kopano.choose" => {
+            let (project, key, pick) = (text_param(p, "project", ""), text_param(p, "key", ""), text_param(p, "pick", "member"));
+            if project.is_empty() || key.is_empty() || (pick != "member" && pick != "main") {
+                return Some(Err("Say which library, which photo setting, and member or main".to_string()));
+            }
+            app.kopano.choices.insert((project, key), pick.clone());
+            Ok(json!({"pick": pick}))
+        }
+        "kopano.setApprover" => {
+            let req = json!({"op": "set-approver", "project": text_param(p, "project", ""), "account": text_param(p, "account", ""),
+                "approver": p.get("approver").and_then(Value::as_bool).unwrap_or(true)});
+            let ctx = app_ctx(app);
+            app.kopano.client.request(&ctx, "Saving…", req).map(|()| json!({"started": true}))
+        }
+        "kopano.resolve" => {
+            let req = json!({"op": "resolve", "project": text_param(p, "project", ""), "clash": text_param(p, "clash", ""), "pick": text_param(p, "pick", "a")});
+            let ctx = app_ctx(app);
+            app.kopano.client.request(&ctx, "Settling…", req).map(|()| json!({"started": true}))
+        }
         "kopano.status" => {
             let state = app.kopano.client.state();
             let mut v = serde_json::to_value(&state).unwrap_or_default();
             if let Some(o) = v.as_object_mut() {
+                o.insert("shareMode".into(), json!(app.kopano.share_mode));
                 o.insert("open".into(), json!(app.kopano.open));
                 o.insert("advanced".into(), json!(app.kopano.advanced));
                 o.insert("controlPort".into(), json!(app.kopano.control_port));
@@ -168,12 +210,57 @@ fn share(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     if accounts.is_empty() {
         return Err("Type your teammate's account, so they may join".to_string());
     }
+    let mode = text_param(p, "mode", &app.kopano.share_mode);
+    if mode != "live" && mode != "approve" {
+        return Err("The way to work is live or approve".to_string());
+    }
     let port = control_port(app)?;
     let members: Vec<Value> = accounts.iter().map(|a| json!({"account": a, "role": "editor", "lanes": []})).collect();
-    let req = json!({"op": "create-project", "name": name, "app": {"kind": "light-control", "port": port}, "members": members});
+    let req = json!({"op": "create-project", "name": name, "app": {"kind": "light-control", "port": port}, "members": members, "mode": mode});
     let ctx = app_ctx(app);
     app.kopano.client.request(&ctx, "Sharing…", req)?;
     Ok(json!({"started": true, "controlPort": port}))
+}
+
+/// `kopano.approve|decline|view {project, member, version, show}`: what the review buttons run.
+/// Approve sends the owner's picks for the clashes of that member's changes.
+fn review_op(app: &mut LightcraftApp, op: &str, p: &Value) -> Result<Value, String> {
+    let project = text_param(p, "project", "");
+    let member = text_param(p, "member", "");
+    let show = text_param(p, "show", "member");
+    if project.is_empty() || (member.is_empty() && show != "off") {
+        return Err("Say which library and whose changes".to_string());
+    }
+    let mut req = json!({"op": op, "project": project, "member": member});
+    if let Some(v) = p.get("version").and_then(Value::as_str) {
+        req["version"] = json!(v);
+    }
+    let busy = match op {
+        "approve" => {
+            let mut choices = serde_json::Map::new();
+            for ((pid, key), pick) in &app.kopano.choices {
+                if *pid == project {
+                    choices.insert(key.clone(), json!(pick));
+                }
+            }
+            if let Some(c) = p.get("choices").and_then(Value::as_object) {
+                choices.extend(c.clone());
+            }
+            req["choices"] = Value::Object(choices);
+            "Approving…"
+        }
+        "decline" => "Declining…",
+        _ => {
+            req["show"] = json!(show);
+            "Showing…"
+        }
+    };
+    let ctx = app_ctx(app);
+    app.kopano.client.request(&ctx, busy, req)?;
+    if op == "approve" || op == "decline" {
+        app.kopano.choices.retain(|(pid, _), _| *pid != project);
+    }
+    Ok(json!({"started": true}))
 }
 
 /// `kopano.join {project, from}`: join a teammate's shared library into this window.
@@ -252,8 +339,141 @@ fn copy(app: &mut LightcraftApp, ctx: &egui::Context, text: &str) {
 
 /// Run a button's command; a refusal shows on the window's last line.
 fn press(app: &mut LightcraftApp, id: &str) {
-    if let Err(e) = app.run(id, json!({})) {
+    press_with(app, id, json!({}));
+}
+
+fn press_with(app: &mut LightcraftApp, id: &str, params: Value) {
+    if let Err(e) = app.run(id, params) {
         set_job(app, false, e);
+    }
+}
+
+/// A photo in plain words: its file name in this library, else the start of its key.
+fn photo_name(app: &LightcraftApp, key: &str) -> String {
+    let hash = key.split('|').next().unwrap_or(key);
+    app.session
+        .catalog
+        .photos()
+        .find(|p| p.content_hash.as_deref() == Some(hash) || format!("{}|{}", p.file_name, p.captured.as_deref().unwrap_or_default()) == key)
+        .map(|p| p.file_name.clone())
+        .unwrap_or_else(|| kopano::short(key).to_string())
+}
+
+/// The "I approve changes" part of one library: who approves, what waits, where my work is.
+fn review_section(app: &mut LightcraftApp, ui: &mut egui::Ui, p: &kopano::Project, r: &kopano::Review) {
+    let t = Tokens::get(ui.ctx());
+    let tag = kopano::short(&p.id).to_string();
+    let who = if r.is_owner {
+        crate::i18n::tr("You approve changes").to_string()
+    } else {
+        format!("{} {}", r.owner_name, crate::i18n::tr("approves changes"))
+    };
+    dim(ui, who);
+    if let Some(text) = r.mine_text() {
+        let declined = r.mine.as_ref().is_some_and(|m| m.state == "declined");
+        ui.add(egui::Label::new(RichText::new(text).color(if declined { t.caution } else { t.text_label }).size(11.5)).wrap());
+    }
+    if !r.approver {
+        return;
+    }
+    heading(ui, "Changes to review");
+    if r.pending.is_empty() {
+        dim(ui, crate::i18n::tr("Nothing waiting."));
+    }
+    for e in &r.pending {
+        let photos = if e.photos == 1 { "1 photo".to_string() } else { format!("{} photos", e.photos) };
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            ui.label(RichText::new(format!("{} changed {photos}", e.name)).color(t.text_label));
+        });
+        let viewing = r.viewing.as_ref().filter(|v| v.account == e.account);
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            let base = json!({"project": p.id, "member": e.account, "version": e.version});
+            if viewing.is_none() {
+                if text_button(ui, &format!("kopano-view-{tag}-{}", e.account), "View", false).clicked() {
+                    let mut q = base.clone();
+                    q["show"] = json!("member");
+                    press_with(app, "kopano.view", q);
+                }
+            } else {
+                let side = viewing.map(|v| v.side.as_str()).unwrap_or("member");
+                if text_button(ui, &format!("kopano-before-{tag}"), "Before", side == "main").clicked() {
+                    let mut q = base.clone();
+                    q["show"] = json!("main");
+                    press_with(app, "kopano.view", q);
+                }
+                if text_button(ui, &format!("kopano-after-{tag}"), "After", side == "member").clicked() {
+                    let mut q = base.clone();
+                    q["show"] = json!("member");
+                    press_with(app, "kopano.view", q);
+                }
+                if text_button(ui, &format!("kopano-viewDone-{tag}"), "Done", false).clicked() {
+                    press_with(app, "kopano.view", json!({"project": p.id, "show": "off"}));
+                }
+            }
+            if text_button(ui, &format!("kopano-approve-{tag}-{}", e.account), "Approve", false).clicked() {
+                press_with(app, "kopano.approve", base.clone());
+            }
+            if text_button(ui, &format!("kopano-decline-{tag}-{}", e.account), "Decline", false).clicked() {
+                press_with(app, "kopano.decline", base.clone());
+            }
+        });
+        if let Some(v) = viewing {
+            let side = if v.side == "main" { crate::i18n::tr("your version (before)").to_string() } else { format!("{}'s version (after)", e.name) };
+            dim(ui, format!("{} {side}. {}", crate::i18n::tr("This window shows"), crate::i18n::tr("Editing waits until you press Done.")));
+        }
+        for c in &e.clashes {
+            let pick = app.kopano.choices.get(&(p.id.clone(), c.key.clone())).cloned().unwrap_or_else(|| "member".to_string());
+            dim(
+                ui,
+                format!(
+                    "{} · {}: {} {} · {} {}",
+                    photo_name(app, &c.photo),
+                    kopano::setting_text(&c.setting),
+                    crate::i18n::tr("yours"),
+                    c.main,
+                    e.name,
+                    c.member
+                ),
+            );
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                let id = kopano::short(&c.photo).to_string();
+                if text_button(ui, &format!("kopano-keepMain-{tag}-{id}"), "Keep yours", pick == "main").clicked() {
+                    press_with(app, "kopano.choose", json!({"project": p.id, "key": c.key, "pick": "main"}));
+                }
+                if text_button(ui, &format!("kopano-takeMember-{tag}-{id}"), "Take theirs", pick == "member").clicked() {
+                    press_with(app, "kopano.choose", json!({"project": p.id, "key": c.key, "pick": "member"}));
+                }
+            });
+        }
+    }
+    if !r.declined.is_empty() {
+        dim(ui, format!("{} {}", crate::i18n::tr("Declined:"), r.declined.join(", ")));
+    }
+}
+
+/// A live library's clashes: both values of the setting, pick one.
+fn clash_section(app: &mut LightcraftApp, ui: &mut egui::Ui, p: &kopano::Project) {
+    let t = Tokens::get(ui.ctx());
+    heading(ui, "Clashes");
+    dim(ui, crate::i18n::tr("You and a teammate changed the same setting at once. Pick the one to keep."));
+    for (i, c) in p.clashes.iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            ui.label(RichText::new(format!("{} · {}", photo_name(app, &c.photo), kopano::setting_text(&c.setting))).color(t.text_label));
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            let tag = kopano::short(&p.id);
+            if text_button(ui, &format!("kopano-pickA-{tag}-{i}"), &c.a, false).clicked() {
+                press_with(app, "kopano.resolve", json!({"project": p.id, "clash": c.id, "pick": "a"}));
+            }
+            if text_button(ui, &format!("kopano-pickB-{tag}-{i}"), &c.b, false).clicked() {
+                press_with(app, "kopano.resolve", json!({"project": p.id, "clash": c.id, "pick": "b"}));
+            }
+        });
     }
 }
 
@@ -404,6 +624,14 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
                 ui.label(RichText::new(crate::i18n::tr(if on { "online" } else { "offline" })).color(t.text_dim).size(11.5));
             });
         }
+        match &p.review {
+            Some(r) => review_section(app, ui, p, r),
+            None if p.mode.as_deref() == Some("live") => dim(ui, crate::i18n::tr("Works live: every edit goes to everyone.")),
+            None => {}
+        }
+        if !p.clashes.is_empty() {
+            clash_section(app, ui, p);
+        }
     }
 
     heading(ui, "Recent activity");
@@ -427,6 +655,23 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
         .hint(crate::i18n::tr("Teammate's ThabangVision account"))
         .width(330.0)
         .show(ui);
+    ui.horizontal(|ui| {
+        let approve = app.kopano.share_mode != "live";
+        if text_button(ui, "kopano-modeApprove", "I approve changes", approve).clicked() {
+            app.kopano.share_mode = "approve".to_string();
+        }
+        if text_button(ui, "kopano-modeLive", "Work together live", !approve).clicked() {
+            app.kopano.share_mode = "live".to_string();
+        }
+    });
+    dim(
+        ui,
+        crate::i18n::tr(if app.kopano.share_mode == "live" {
+            "Every edit goes to everyone at once."
+        } else {
+            "Your teammates see their own edits at once. Your library changes only when you approve."
+        }),
+    );
     if text_button(ui, "kopano-share", "Share", false).clicked() {
         press(app, "kopano.share");
     }

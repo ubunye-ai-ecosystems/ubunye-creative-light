@@ -132,6 +132,177 @@ pub struct Project {
     /// Something answers on `app_port` (checked by the poll thread; `None` = not checked).
     pub app_alive: Option<bool>,
     pub members: Vec<Member>,
+    /// "live" (every edit goes to everyone) or "approve" (the owner approves changes); `None`
+    /// from an older service, which only knows live.
+    pub mode: Option<String>,
+    /// What waits for approval, and where this person's own work is (approve mode).
+    pub review: Option<Review>,
+    /// Settings both sides changed at once in a live library, waiting for a pick.
+    pub clashes: Vec<Clash>,
+}
+
+/// An "I approve changes" library as the service sees it (`status.review`, `review` events).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Review {
+    pub is_owner: bool,
+    /// This person may approve (the owner, or someone the owner chose).
+    pub approver: bool,
+    pub owner_name: String,
+    pub pending: Vec<Pending>,
+    /// Members whose latest work was declined (their branch keeps it).
+    pub declined: Vec<String>,
+    /// This person's own work (a member): none, waiting, approved or declined.
+    pub mine: Option<Mine>,
+    /// The owner's window shows a member's version now.
+    pub viewing: Option<Viewing>,
+}
+
+/// One teammate's changes waiting for review.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Pending {
+    pub account: String,
+    pub name: String,
+    pub version: String,
+    pub photos: u64,
+    /// Photo keys (content hashes) they changed.
+    pub changed: Vec<String>,
+    pub clashes: Vec<PendingClash>,
+}
+
+/// A setting the member and main both changed since the member last caught up.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct PendingClash {
+    pub key: String,
+    pub photo: String,
+    pub setting: String,
+    pub main: String,
+    pub member: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Mine {
+    pub state: String,
+    pub photos: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Viewing {
+    pub account: String,
+    pub name: String,
+    /// "member" (their version shows) or "main" (before).
+    pub side: String,
+}
+
+/// A live library's clash: one setting of one photo, two values; a person picks one.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Clash {
+    /// The service's id for it (what `resolve` takes).
+    pub id: String,
+    pub photo: String,
+    pub setting: String,
+    pub a: String,
+    pub b: String,
+}
+
+/// A setting value in plain words: numbers with two decimals, text as it is.
+pub fn value_text(v: &Value) -> String {
+    match v {
+        Value::Number(n) => n.as_f64().map(|f| if f.fract() == 0.0 { format!("{f:.0}") } else { format!("{f:.2}") }).unwrap_or_else(|| n.to_string()),
+        Value::String(s) => s.clone(),
+        Value::Null => "none".to_string(),
+        Value::Bool(b) => if *b { "on" } else { "off" }.to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// "light.exposure" -> "Exposure"; "rating" -> "Rating" (the last part, in words).
+pub fn setting_text(path: &str) -> String {
+    let last = path.rsplit('.').next().unwrap_or(path).replace('_', " ");
+    let mut c = last.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => last,
+    }
+}
+
+impl Review {
+    /// From `status.review` or a `review` event.
+    pub fn from_value(v: &Value) -> Review {
+        let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        let pending = v
+            .get("pending")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|e| Pending {
+                account: s(e, "account"),
+                name: s(e, "name"),
+                version: s(e, "version"),
+                photos: e.get("photos").and_then(Value::as_u64).unwrap_or(0),
+                changed: e.get("changes").and_then(Value::as_array).into_iter().flatten().map(|c| s(c, "photo")).collect(),
+                clashes: e
+                    .get("clashes")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|c| {
+                        let (key, photo) = (s(c, "key"), s(c, "photo"));
+                        c.get("settings").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(move |x| PendingClash {
+                            key: key.clone(),
+                            photo: photo.clone(),
+                            setting: s(&x, "setting"),
+                            main: value_text(x.get("main").unwrap_or(&Value::Null)),
+                            member: value_text(x.get("member").unwrap_or(&Value::Null)),
+                        })
+                    })
+                    .collect(),
+            })
+            .collect();
+        Review {
+            is_owner: v.get("is_owner").and_then(Value::as_bool).unwrap_or(false),
+            approver: v.get("approver").and_then(Value::as_bool).unwrap_or(false),
+            owner_name: s(v, "owner_name"),
+            pending,
+            declined: v.get("declined").and_then(Value::as_array).into_iter().flatten().map(|d| s(d, "name")).collect(),
+            mine: v
+                .get("mine")
+                .filter(|m| m.is_object())
+                .map(|m| Mine { state: s(m, "state"), photos: m.get("photos").and_then(Value::as_u64).unwrap_or(0) }),
+            viewing: v.get("viewing").filter(|m| m.is_object()).map(|m| Viewing { account: s(m, "account"), name: s(m, "name"), side: s(m, "side") }),
+        }
+    }
+
+    /// The member's line: "Waiting for Alice's approval", "Approved", "Declined".
+    pub fn mine_text(&self) -> Option<String> {
+        let m = self.mine.as_ref()?;
+        let owner = if self.owner_name.is_empty() { "the owner".to_string() } else { self.owner_name.clone() };
+        Some(match m.state.as_str() {
+            "waiting" => format!("You changed {} · Waiting for {owner}'s approval", photos_text(Some(m.photos))),
+            "approved" => format!("Approved: {owner} took your changes"),
+            "declined" => format!("Declined: {owner} kept the library as it was. Your changes stay in your window."),
+            _ => format!("Your changes go to {owner} for approval"),
+        })
+    }
+}
+
+/// From `status.clashes` (live libraries).
+pub fn clashes_from(v: &Value) -> Vec<Clash> {
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|c| {
+            let (id, photo) = (s(c, "clash"), s(c, "photo"));
+            c.get("settings").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().take(1).map(move |x| Clash {
+                id: id.clone(),
+                photo: photo.clone(),
+                setting: s(&x, "setting"),
+                a: value_text(x.get("a").unwrap_or(&Value::Null)),
+                b: value_text(x.get("b").unwrap_or(&Value::Null)),
+            })
+        })
+        .collect()
 }
 
 /// Who may join a project (from `status`).
@@ -178,6 +349,19 @@ pub enum Said {
     AppProblem {
         error: String,
     },
+    /// A teammate's changes wait for this person's approval.
+    ToReview {
+        who: String,
+        photos: u64,
+    },
+    /// The owner (or an approver) approved this person's changes.
+    Approved {
+        who: String,
+    },
+    /// ... or declined them.
+    Declined {
+        who: String,
+    },
 }
 
 impl Said {
@@ -195,6 +379,9 @@ impl Said {
             Said::Reattached { name } => format!("This window is linked to {name} again"),
             // the service's own words stay in `kopano.status` and the log, not on screen
             Said::AppProblem { .. } => "Lost touch with this window for a moment; it reconnects by itself".to_string(),
+            Said::ToReview { who, photos } => format!("{who} changed {} · waiting for your review", photos_text(Some(*photos))),
+            Said::Approved { who } => format!("{who} approved your changes"),
+            Said::Declined { who } => format!("{who} declined your changes"),
         }
     }
 }
@@ -351,10 +538,16 @@ impl State {
             })
             .collect();
         let port = v.get("app").map(|a| app_port(Some(a)));
+        let mode = v.get("mode").and_then(Value::as_str).map(str::to_string);
+        let review = v.get("review").map(Review::from_value);
+        let clashes = v.get("clashes").map(clashes_from).unwrap_or_default();
         if let Some(p) = self.projects.iter_mut().find(|p| p.id == project) {
             p.teammates = teammates;
             p.head = head;
             p.members = members;
+            p.mode = mode;
+            p.review = review;
+            p.clashes = clashes;
             if let Some(port) = port
                 && port != p.app_port
             {
@@ -402,6 +595,30 @@ impl State {
                     _ => Said::Changed { who, photos: photo_count(ev) },
                 };
                 self.note(project, said, now_ms);
+            }
+            Some("review") => {
+                let new = Review::from_value(ev);
+                let Some(p) = project.as_ref().and_then(|id| self.projects.iter_mut().find(|p| p.id == *id)) else { return };
+                let old = p.review.replace(new.clone()).unwrap_or_default();
+                p.mode = Some("approve".to_string());
+                // say what changed: new work to review, or what happened to mine
+                let mut said = vec![];
+                for e in &new.pending {
+                    if !old.pending.iter().any(|o| o.account == e.account && o.version == e.version) {
+                        said.push(Said::ToReview { who: e.name.clone(), photos: e.photos });
+                    }
+                }
+                let (was, now) = (old.mine.map(|m| m.state), new.mine.as_ref().map(|m| m.state.clone()));
+                if was.is_some() && was != now {
+                    match now.as_deref() {
+                        Some("approved") => said.push(Said::Approved { who: new.owner_name.clone() }),
+                        Some("declined") => said.push(Said::Declined { who: new.owner_name.clone() }),
+                        _ => {}
+                    }
+                }
+                for x in said {
+                    self.note(project.clone(), x, now_ms);
+                }
             }
             Some("app") => {
                 let error = s("error").unwrap_or("unknown problem").to_string();
@@ -791,6 +1008,19 @@ pub fn job_done(op: &str, v: &Value) -> Job {
             text: "Joined. Your teammate's photos and edits arrive in a few seconds.".to_string(),
             project: v.get("project").and_then(Value::as_str).map(str::to_string),
         },
+        "approve" => Job { busy: false, ok: true, text: "Approved. The changes are in your library.".to_string(), project: None },
+        "decline" => Job { busy: false, ok: true, text: "Declined. Your library stays as it was.".to_string(), project: None },
+        "view" => Job {
+            busy: false,
+            ok: true,
+            text: match v.pointer("/viewing/side").and_then(Value::as_str) {
+                Some("member") => "Showing their version of the photos they changed. Editing waits until you are done.".to_string(),
+                Some("main") => "Showing your version (before).".to_string(),
+                _ => "Back to your library.".to_string(),
+            },
+            project: None,
+        },
+        "resolve" => Job { busy: false, ok: true, text: "Clash settled. Everyone gets your pick.".to_string(), project: None },
         _ => Job { busy: false, ok: true, text: "Done.".to_string(), project: None },
     }
 }
