@@ -186,8 +186,13 @@ jobs:
           sudo apt-get install -y ./dist/release/*.deb
           /usr/bin/kopanod init | tail -1
           (/usr/bin/kopanod run --api-port 18590 >"$RUNNER_TEMP/k.log" 2>&1 &)
-          sleep 2
-          /usr/bin/kopanod call --api-port 18590 --json '{"op":"hello"}' | grep '"signed_in":false'
+          # the service answers once its port is bound; give a cold runner up to 20 s
+          ok=
+          for i in $(seq 1 20); do
+            if /usr/bin/kopanod call --api-port 18590 --json '{"op":"hello"}' 2>/dev/null | grep -q '"signed_in":false'; then ok=1; break; fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then echo "kopanod did not answer; its log:"; cat "$RUNNER_TEMP/k.log"; exit 1; fi
           sudo apt-get remove -y lightcraft
           sleep 1
           if pgrep -f '^/usr/bin/kopanod '; then echo "kopanod still running after remove"; exit 1; fi
