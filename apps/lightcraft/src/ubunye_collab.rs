@@ -71,6 +71,11 @@ pub fn lasting_copy(exe: &Path, home: &Path) -> Result<Option<PathBuf>, String> 
     if cfg!(target_os = "macos") && (s.contains("/AppTranslocation/") || s.starts_with("/Volumes/")) {
         return Ok(None);
     }
+    // Windows: only the installed app (the MSI puts it under Program Files). A portable copy can
+    // be moved or deleted, which would leave a broken startup entry behind.
+    if cfg!(windows) && !installed_on_windows(exe) {
+        return Ok(None);
+    }
     if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_some() {
         let dir = home.join("bin");
         let to = dir.join(EXE);
@@ -89,6 +94,15 @@ pub fn lasting_copy(exe: &Path, home: &Path) -> Result<Option<PathBuf>, String> 
         return Ok(Some(to));
     }
     Ok(Some(exe.to_path_buf()))
+}
+
+/// Is `exe` inside a Program Files folder (where the MSI installs it)?
+fn installed_on_windows(exe: &Path) -> bool {
+    let exe = exe.to_string_lossy().to_lowercase();
+    ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+        .any(|dir| exe.starts_with(&format!("{}\\", dir.trim_end_matches('\\').to_lowercase())))
 }
 
 /// The start-at-sign-in entry kopanod writes, as text (`None`: there is none).
