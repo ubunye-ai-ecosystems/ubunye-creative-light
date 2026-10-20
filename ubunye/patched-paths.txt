@@ -140,3 +140,7 @@ README.md
 crates/engine/src/cmd/query.rs
 apps/lightcraft/src/control_server.rs
 packaging/windows/package.ps1
+crates/engine/src/cmd/mod.rs
+crates/engine/src/import.rs
+crates/engine/src/cmd/missing.rs
+crates/engine/src/smart.rs

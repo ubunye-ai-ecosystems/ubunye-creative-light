@@ -568,7 +568,9 @@ fn open_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: boo
 /// and offers Try Again / Choose Another Library… / Continue Without Saving / Quit (issue #100).
 fn open_library_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
     if in_memory {
-        return (if seed_demo { Session::with_demo() } else { Session::new() }.with_fs().with_default_denoise_models().with_system_clock(), None);
+        // Ubunye: smart previews work in memory too (a throwaway folder, removed on exit)
+        let s = if seed_demo { Session::with_demo() } else { Session::new() };
+        return (s.with_fs().with_default_denoise_models().with_system_clock().with_memory_smart_previews(), None);
     }
     let unopened = || Session::new().with_fs().with_default_denoise_models().with_system_clock();
     let Some(dir) = dir else {
