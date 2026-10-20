@@ -179,6 +179,11 @@ struct FakeData {
     /// The Light control port the project is bound to (0: none); `attach` changes it.
     app_port: AtomicUsize,
     signed_out: AtomicBool,
+    /// The project is "I approve changes": this side owns it (pending work), or is the member.
+    approve_owner: AtomicBool,
+    approve_member: AtomicBool,
+    /// A live project with one open clash.
+    live_clash: AtomicBool,
 }
 
 struct Fake {
@@ -270,9 +275,33 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool, data: &FakeDa
                 json!({"device": ALICE, "name": "Alice", "account": "acct-alice", "signed_in": !data.signed_out.load(Ordering::SeqCst), "signed_in_until_ms": 1.8e12,
                 "projects": [{"id": PID, "name": "Shoot", "app": app(app_port)}]})
             }
-            "status" => json!({"head": "1234abcd", "name": "Shoot", "app": app(app_port),
+            "status" => {
+                let mut st = json!({"head": "1234abcd", "name": "Shoot", "app": app(app_port),
                 "teammates": [{"device": M1, "name": "Member1", "account": "acct-m1", "online": true}], "online": {M1: "Member1"},
-                "members": [{"account": "acct-alice", "role": "editor", "owner": true}, {"account": "acct-m1", "role": "editor", "owner": false}]}),
+                "members": [{"account": "acct-alice", "role": "editor", "owner": true}, {"account": "acct-m1", "role": "editor", "owner": false}]});
+                if data.approve_owner.load(Ordering::SeqCst) {
+                    st["mode"] = json!("approve");
+                    st["review"] = json!({"is_owner": true, "approver": true, "owner_name": "Alice", "declined": [], "mine": null, "viewing": null,
+                        "pending": [{"account": "acct-m1", "name": "Member1", "version": "v1", "photos": 3, "summary": "changed 3 photos",
+                            "changes": [{"photo": "abcdef0123", "fields": []}],
+                            "clashes": [{"key": "abcdef0123#develop", "photo": "abcdef0123", "fields": ["Light exposure"],
+                                "settings": [{"setting": "light.exposure", "main": -1.0, "member": 1.5}]}]}]});
+                } else if data.approve_member.load(Ordering::SeqCst) {
+                    st["mode"] = json!("approve");
+                    st["review"] = json!({"is_owner": false, "approver": false, "owner_name": "Alice", "declined": [], "pending": [], "viewing": null,
+                        "mine": {"state": "waiting", "photos": 2}});
+                } else if data.live_clash.load(Ordering::SeqCst) {
+                    st["mode"] = json!("live");
+                    st["clashes"] = json!([{"clash": "kopano/conflict/k/11-22", "key": "k#develop", "photo": "k", "fields": ["Light exposure"],
+                        "settings": [{"setting": "light.exposure", "a": 0.5, "b": -0.25}]}]);
+                }
+                st
+            }
+            "approve" => json!({"main": "m2", "clashes_decided": 1}),
+            "decline" => json!({"declined": "v1"}),
+            "view" => json!({"viewing": {"side": req["show"]}}),
+            "resolve" => json!({"settled": req["clash"]}),
+            "set-approver" => json!({"approver": true}),
             "create-project" => json!({"project": NEW_PID, "head": "99", "items": 15, "photos": 5}),
             "attach" => {
                 app_port.store(req["app"]["port"].as_u64().unwrap_or(0) as usize, Ordering::SeqCst);
@@ -615,4 +644,119 @@ fn errors_about_the_old_port_right_after_relinking_are_not_shown() {
     // later trouble shows again
     s.apply_event(&json!({"event": "app", "project": PID, "error": "port 18103 refused"}), 1000.0 + RELINK_QUIET_MS + 1.0);
     assert_eq!(s.activity[0].said.text(), "Lost touch with this window for a moment; it reconnects by itself");
+}
+
+#[test]
+fn review_lines_read_in_plain_words() {
+    let owner = Review::from_value(&json!({"is_owner": true, "approver": true, "owner_name": "Alice",
+        "pending": [{"account": "acct-m1", "name": "Member1", "version": "v1", "photos": 3, "changes": [{"photo": "a"}, {"photo": "b"}],
+            "clashes": [{"key": "a#develop", "photo": "a", "settings": [{"setting": "light.exposure", "main": -1.0, "member": 1.5}]}]}]}));
+    assert_eq!(owner.pending[0].name, "Member1");
+    assert_eq!(owner.pending[0].changed, ["a", "b"]);
+    assert_eq!(owner.pending[0].clashes[0].main, "-1");
+    assert_eq!(owner.pending[0].clashes[0].member, "1.50");
+    assert_eq!(setting_text("light.exposure"), "Exposure");
+    assert_eq!(owner.mine_text(), None);
+    let mine = |state: &str| Review::from_value(&json!({"owner_name": "Alice", "mine": {"state": state, "photos": 2}})).mine_text().unwrap();
+    assert_eq!(mine("waiting"), "You changed 2 photos · Waiting for Alice's approval");
+    assert!(mine("approved").starts_with("Approved"));
+    assert!(mine("declined").starts_with("Declined"));
+    // events: new work to review, and what happened to mine
+    let mut s = state_with_project();
+    s.apply_event(
+        &json!({"event": "review", "project": PID, "is_owner": true, "approver": true, "owner_name": "Alice",
+        "pending": [{"account": "acct-m1", "name": "Member1", "version": "v1", "photos": 3}]}),
+        1000.0,
+    );
+    assert_eq!(s.activity[0].said.text(), "Member1 changed 3 photos · waiting for your review");
+    let mut m = state_with_project();
+    m.apply_event(&json!({"event": "review", "project": PID, "owner_name": "Alice", "mine": {"state": "waiting", "photos": 1}}), 1000.0);
+    m.apply_event(&json!({"event": "review", "project": PID, "owner_name": "Alice", "mine": {"state": "approved", "photos": 0}}), 2000.0);
+    assert_eq!(m.activity[0].said.text(), "Alice approved your changes");
+    m.apply_event(&json!({"event": "review", "project": PID, "owner_name": "Alice", "mine": {"state": "declined", "photos": 1}}), 3000.0);
+    assert_eq!(m.activity[0].said.text(), "Alice declined your changes");
+    no_protocol_words(&m.activity.iter().map(|a| a.said.text()).collect::<Vec<_>>().join("\n"));
+}
+
+#[test]
+fn the_owner_reviews_views_approves_and_declines_from_the_window() {
+    let (fake, config, _home) = fake_service();
+    fake.data.approve_owner.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    h.app.kopano.start_control = Some(Box::new(|| Ok((18999, None))));
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(
+        h.step_until(T, |h| {
+            let p = painted(h);
+            p.contains("Changes to review") && p.contains("Member1 changed 3 photos") && p.contains("You approve changes")
+        }),
+        "{}",
+        painted(&h)
+    );
+    let p = painted(&h);
+    no_protocol_words(&p);
+    assert!(p.contains("Exposure") && p.contains("Keep yours") && p.contains("Take theirs"), "{p}");
+    let tag = short(PID);
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-view-{tag}-acct-m1")}), T));
+    wait("the view", T, || fake.requests("view").len() == 1);
+    assert_eq!(fake.requests("view")[0]["show"], "member");
+    assert_eq!(fake.requests("view")[0]["member"], "acct-m1");
+    for _ in 0..5 {
+        h.step();
+    }
+    // the clash: keep main's value for that photo, then approve with that pick
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-keepMain-{tag}-abcdef01")}), T));
+    h.step();
+    wait("the job", T, || !h.app.kopano.client.state().job.as_ref().is_some_and(|j| j.busy));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-approve-{tag}-acct-m1")}), T));
+    wait("the approve", T, || fake.requests("approve").len() == 1);
+    let a = &fake.requests("approve")[0];
+    assert_eq!(a["member"], "acct-m1");
+    assert_eq!(a["version"], "v1");
+    assert_eq!(a["choices"], json!({"abcdef0123#develop": "main"}));
+    assert!(h.step_until(T, |h| painted(h).contains("Approved. The changes are in your library.")), "{}", painted(&h));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-decline-{tag}-acct-m1")}), T));
+    wait("the decline", T, || fake.requests("decline").len() == 1);
+    assert!(h.step_until(T, |h| painted(h).contains("Declined. Your library stays as it was.")), "{}", painted(&h));
+    // Share asks how to work: "I approve changes" unless live is picked
+    type_into(&mut h, "kopano:shareName", "Owner shoot");
+    type_into(&mut h, "kopano:shareAccount", "acct-m1");
+    assert!(painted(&h).contains("I approve changes") && painted(&h).contains("Work together live"));
+    ok(h.request("ui.clickWidget", json!({"id": "button:kopano-share"}), T));
+    wait("the share", T, || fake.requests("create-project").len() == 1);
+    assert_eq!(fake.requests("create-project")[0]["mode"], "approve");
+    wait("the job", T, || !h.app.kopano.client.state().job.as_ref().is_some_and(|j| j.busy));
+    ok(h.request("ui.clickWidget", json!({"id": "button:kopano-modeLive"}), T));
+    h.step();
+    ok(h.request("ui.clickWidget", json!({"id": "button:kopano-share"}), T));
+    wait("the second share", T, || fake.requests("create-project").len() == 2);
+    assert_eq!(fake.requests("create-project")[1]["mode"], "live");
+}
+
+#[test]
+fn a_member_sees_where_his_changes_are() {
+    let (fake, config, _home) = fake_service();
+    fake.data.approve_member.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(h.step_until(T, |h| painted(h).contains("Waiting for Alice's approval")), "{}", painted(&h));
+    let p = painted(&h);
+    assert!(p.contains("Alice approves changes") && !p.contains("Changes to review"), "{p}");
+    no_protocol_words(&p);
+}
+
+#[test]
+fn a_live_clash_offers_both_values() {
+    let (fake, config, _home) = fake_service();
+    fake.data.live_clash.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(h.step_until(T, |h| painted(h).contains("Pick the one to keep")), "{}", painted(&h));
+    let p = painted(&h);
+    assert!(p.contains("0.50") && p.contains("-0.25") && p.contains("Works live"), "{p}");
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-pickB-{}-0", short(PID))}), T));
+    wait("the resolve", T, || fake.requests("resolve").len() == 1);
+    assert_eq!(fake.requests("resolve")[0]["pick"], "b");
+    assert_eq!(fake.requests("resolve")[0]["clash"], "kopano/conflict/k/11-22");
+    no_protocol_words(&painted(&h));
 }
