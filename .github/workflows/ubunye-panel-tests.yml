@@ -1,0 +1,38 @@
+# Ubunye: the Share & Collaborate panel's tests and the app's own unit tests, on Windows and
+# Linux, without the full workspace (ubunye-ci) or GPU canvas tests. Run on demand or on a
+# push to the collaboration branch.
+name: ubunye-panel-tests
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [feature/kopano-installers]
+    paths: ["crates/**", "apps/**", "Cargo.lock", ".github/workflows/ubunye-panel-tests.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: ubunye-panel-tests-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+jobs:
+  test:
+    name: panel + app tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Panel and UI unit tests
+        run: cargo test --locked -p lightcraft-ui-egui --lib
+      - name: App unit tests
+        run: cargo test --locked -p lightcraft --bins
