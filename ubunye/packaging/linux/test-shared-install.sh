@@ -52,7 +52,7 @@ check_shared() { # <package expected to provide it>
   [ "$t" = "/usr/lib/$1/kopanod" ] || fail "/usr/bin/kopanod -> $t, expected /usr/lib/$1/kopanod"
   for u in /usr/lib/systemd/user/thabangvision-collab.service /usr/lib/systemd/user/default.target.wants/thabangvision-collab.service; do
     [ -e "$u" ] || fail "$u missing"
-    grep -q '^ExecStart=/usr/bin/kopanod run' "$u" || fail "$u is not the kopanod unit"
+    grep -q "^ExecStart=/usr/bin/kopanod run --standby" "$u" || fail "$u is not the kopanod unit"
   done
   echo "ok: /usr/bin/kopanod -> $t, start-at-sign-in unit in place"
 }

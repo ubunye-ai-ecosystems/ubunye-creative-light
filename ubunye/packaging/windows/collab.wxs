@@ -45,7 +45,7 @@
       <Component Id="UbunyeKopanod" Guid="$(var.UbunyeKopanodGuid)">
         <File Id="KopanodExe" Name="kopanod.exe" Source="$(var.CollabBinDir)\kopanod.exe" KeyPath="yes" />
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run"
-            Name="ThabangVision collaboration" Type="string" Value="&quot;[#KopanodExe]&quot; run" />
+            Name="ThabangVision collaboration" Type="string" Value="&quot;[#KopanodExe]&quot; run --standby" />
       </Component>
     </ComponentGroup>
 

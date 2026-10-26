@@ -5,7 +5,7 @@
 Description=ThabangVision collaboration
 
 [Service]
-ExecStart=/usr/bin/kopanod run
+ExecStart=/usr/bin/kopanod run --standby
 Restart=on-failure
 RestartSec=10
 

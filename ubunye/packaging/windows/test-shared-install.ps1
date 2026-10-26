@@ -34,14 +34,14 @@ function Start-AsAtSignIn {
   # what Windows does at sign-in: run the Run value's command
   $cmd = (Get-ItemProperty $RunKey).$RunValue
   $exe = ($cmd -split '"')[1]
-  Start-Process $exe -ArgumentList 'run'
+  Start-Process $exe -ArgumentList (($cmd -split '"', 3)[2].Trim() -split ' ')
   foreach ($i in 1..30) { if (Answers) { Write-Output "ok: the service answers"; return }; Start-Sleep 1 }
   Fail "kopanod does not answer"
 }
 function Check-Shared {
   if (-not (Test-Path $Shared)) { Fail "$Shared missing" }
   $cmd = (Get-ItemProperty $RunKey -ErrorAction SilentlyContinue).$RunValue
-  if ($cmd -ne "`"$Shared`" run") { Fail "Run value is '$cmd', expected '`"$Shared`" run'" }
+  if ($cmd -ne "`"$Shared`" run --standby") { Fail "Run value is '$cmd', expected '`"$Shared`" run --standby'" }
   Write-Output "ok: $Shared ($((Get-Item $Shared).VersionInfo.FileVersion), '$((Get-Item $Shared).VersionInfo.FileDescription)') starts at sign-in"
 }
 function Check-Gone {
