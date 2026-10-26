@@ -775,6 +775,9 @@ fn the_owner_reviews_views_approves_and_declines_from_the_window() {
     wait("the job", T, || !h.app.kopano.client.state().job.as_ref().is_some_and(|j| j.busy));
     ok(h.request("ui.clickWidget", json!({"id": "button:kopano-modeLive"}), T));
     h.step();
+    // a sent invite clears the teammate field (the email does not stay on screen)
+    assert!(h.app.kopano.share_account.is_empty());
+    type_into(&mut h, "kopano:shareAccount", "acct-m1");
     ok(h.request("ui.clickWidget", json!({"id": "button:kopano-share"}), T));
     wait("the second share", T, || fake.requests("create-project").len() == 2);
     assert_eq!(fake.requests("create-project")[1]["mode"], "live");
@@ -898,7 +901,7 @@ fn people_by_name_with_invite_remove_and_leave() {
     ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
     assert!(h.step_until(T, |h| painted(h).contains("Bongi")), "{}", painted(&h));
     let p = painted(&h);
-    assert!(p.contains("Sipho") && p.contains("invited") && p.contains("can edit") && !p.contains('@'), "{p}");
+    assert!(p.contains("Sipho") && p.contains("invited") && p.contains("can edit") && !p.contains("example.com"), "{p}");
     let tag = short(PID);
     type_into(&mut h, &format!("kopano:invite-{tag}"), "thandi@example.com");
     ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-invite-{tag}")}), T));

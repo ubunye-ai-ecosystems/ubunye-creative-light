@@ -33,6 +33,7 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - name: Panel and UI unit tests
-        run: cargo test --locked -p lightcraft-ui-egui --lib
+        # tests_model_setup needs a build that can run denoise models (not on these runners)
+        run: cargo test --locked -p lightcraft-ui-egui --lib -- --skip tests_model_setup
       - name: App unit tests
         run: cargo test --locked -p lightcraft --bins
