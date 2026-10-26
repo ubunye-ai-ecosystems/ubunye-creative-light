@@ -79,12 +79,12 @@ foreach ($order in @(@($A, $B), @($B, $A))) {
   Check-Shared
   # a newer kopanod.exe replaces the running one (stopped by the MSI); sign-in starts it again
   if (-not (Answers)) { Write-Output 'the newer kopanod replaced the running one'; Start-AsAtSignIn }
-  Write-Output "== uninstall $first: $second keeps collaboration"
+  Write-Output "== uninstall ${first}: $second keeps collaboration"
   Msi x $first
   Check-Shared
   if (-not (Answers)) { Fail "uninstalling the first app stopped the service" }
   Write-Output 'ok: the service still answers'
-  Write-Output "== uninstall $second: the last app"
+  Write-Output "== uninstall ${second}: the last app"
   Msi x $second
   Check-Gone
 }
