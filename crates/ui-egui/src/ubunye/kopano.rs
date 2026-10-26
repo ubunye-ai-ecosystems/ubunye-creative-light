@@ -139,6 +139,54 @@ pub struct Project {
     pub review: Option<Review>,
     /// Settings both sides changed at once in a live library, waiting for a pick.
     pub clashes: Vec<Clash>,
+    /// The people on it, from ThabangVision (`people`): names and roles, never emails. Empty
+    /// for a library that is not shared through ThabangVision.
+    pub people: Vec<Person>,
+}
+
+/// One person on a shared library.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Person {
+    pub user: String,
+    pub name: String,
+    pub role: String,
+    /// "invited" (not joined yet) or "active".
+    pub status: String,
+    pub me: bool,
+    pub online: bool,
+}
+
+impl Person {
+    /// What they may do, in plain words.
+    pub fn role_text(&self) -> &'static str {
+        if self.status == "invited" {
+            return "invited";
+        }
+        match self.role.as_str() {
+            "owner" => "owner",
+            "approver" => "approves",
+            "viewer" => "can view",
+            "admin" => "can share",
+            _ => "can edit",
+        }
+    }
+}
+
+/// A sign-in waiting for the person in the browser (`hello.signing_in`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct SigningIn {
+    pub code: String,
+    pub link: String,
+}
+
+/// A library shared with this person on ThabangVision (`shared-projects`, "Shared with me").
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct SharedRow {
+    pub shared: String,
+    pub name: String,
+    pub project: String,
+    /// It is on this computer already.
+    pub here: bool,
 }
 
 /// An "I approve changes" library as the service sees it (`status.review`, `review` events).
@@ -427,6 +475,12 @@ pub struct State {
     pub signed_in: bool,
     /// Until when (wall-clock ms), when the service says.
     pub signed_in_until_ms: Option<f64>,
+    /// A sign-in waiting in the browser.
+    pub signing_in: Option<SigningIn>,
+    /// Why the last sign-in ended or why this computer was signed out (the service's sentence).
+    pub account_message: Option<String>,
+    /// Libraries shared with this person, not on this computer yet included.
+    pub shared_with_me: Vec<SharedRow>,
     /// Why it isn't running, or what went wrong talking to it (plain words).
     pub problem: Option<String>,
     pub me: Option<Me>,
@@ -464,6 +518,14 @@ impl State {
         self.me = Some(Me { device: s("device"), name: s("name"), account: s("account") });
         self.signed_in = v.get("signed_in").and_then(Value::as_bool).unwrap_or(false);
         self.signed_in_until_ms = v.get("signed_in_until_ms").and_then(Value::as_f64);
+        self.signing_in = v.get("signing_in").filter(|x| x.is_object()).map(|x| SigningIn {
+            code: x.get("code").and_then(Value::as_str).unwrap_or_default().to_string(),
+            link: x.get("link").and_then(Value::as_str).unwrap_or_default().to_string(),
+        });
+        self.account_message = v.get("message").and_then(Value::as_str).filter(|m| !m.is_empty()).map(str::to_string);
+        if !self.signed_in {
+            self.shared_with_me.clear();
+        }
         let mut projects = Vec::new();
         for p in v.get("projects").and_then(Value::as_array).into_iter().flatten() {
             let Some(id) = p.get("id").and_then(Value::as_str) else { continue };
@@ -484,6 +546,46 @@ impl State {
     }
 
     /// Take the reply to `status {project}`.
+    pub fn apply_people(&mut self, project: &str, v: &Value) {
+        let Some(p) = self.projects.iter_mut().find(|p| p.id == project) else { return };
+        let s = |x: &Value, k: &str| x.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        let b = |x: &Value, k: &str| x.get(k).and_then(Value::as_bool).unwrap_or(false);
+        p.people = if v.get("shared").is_some_and(|x| x.as_str().is_some()) {
+            v.get("people")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|x| Person {
+                    user: s(x, "user"),
+                    name: s(x, "name"),
+                    role: s(x, "role"),
+                    status: s(x, "status"),
+                    me: b(x, "me"),
+                    online: b(x, "online"),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+    }
+
+    /// Take the reply to `shared-projects`: what others shared with this person.
+    pub fn apply_shared(&mut self, v: &Value) {
+        let s = |x: &Value, k: &str| x.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        self.shared_with_me = v
+            .get("shared")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|x| SharedRow {
+                shared: s(x, "shared"),
+                name: s(x, "name"),
+                project: s(x, "project"),
+                here: x.get("here").and_then(Value::as_bool).unwrap_or(false),
+            })
+            .collect();
+    }
+
     pub fn apply_status(&mut self, project: &str, v: &Value) {
         let mut online: BTreeMap<String, String> = v
             .get("online")
@@ -753,6 +855,10 @@ impl Client {
         Err("Collaboration works in the desktop app only.".to_string())
     }
 
+    pub fn request_steps(&mut self, _ctx: &egui::Context, _busy: &str, _steps: Vec<Value>) -> Result<(), String> {
+        Err("Collaboration works in the desktop app only.".to_string())
+    }
+
     pub fn attach(&mut self, _ctx: &egui::Context, _project: &str, _name: &str, _port: u16) {}
 }
 
@@ -830,11 +936,19 @@ mod native {
                 s.apply_hello(&hello);
                 s.projects.iter().map(|p| p.id.clone()).collect()
             };
+            let signed_in = lock(shared).signed_in;
             for id in ids {
                 // one project's trouble doesn't hide the others
                 if let Ok(st) = call(&mut c, json!({"op": "status", "project": id})) {
                     lock(shared).apply_status(&id, &st);
                 }
+                // the people, from ThabangVision (an older service has no such question)
+                if signed_in && let Ok(v) = call(&mut c, json!({"op": "people", "project": id})) {
+                    lock(shared).apply_people(&id, &v);
+                }
+            }
+            if signed_in && let Ok(v) = call(&mut c, json!({"op": "shared-projects"})) {
+                lock(shared).apply_shared(&v);
             }
             // is a Light still answering where each project points? (a dead port after a restart)
             let ports: Vec<(String, u16)> = lock(shared).projects.iter().filter_map(|p| Some((p.id.clone(), p.app_port?))).collect();
@@ -941,6 +1055,13 @@ mod native {
         /// Run one request (`create-project`, `join`…) on its own thread; the outcome lands in
         /// [`State::job`]. `busy` is what the panel says meanwhile.
         pub fn request(&mut self, ctx: &egui::Context, busy: &str, req: Value) -> Result<(), String> {
+            self.request_steps(ctx, busy, vec![req])
+        }
+
+        /// Several requests in a row as one job (Share, then an invite per email). A later step's
+        /// `"project": "$new"` is the project the first step made. The job says how the first
+        /// step went, or where the row stopped.
+        pub fn request_steps(&mut self, ctx: &egui::Context, busy: &str, steps: Vec<Value>) -> Result<(), String> {
             self.start(ctx);
             {
                 let mut s = lock(&self.shared);
@@ -950,12 +1071,26 @@ mod native {
                 s.job = Some(Job { busy: true, ok: false, text: busy.to_string(), project: None });
             }
             let (config, shared, repaint, wake) = (self.config.clone(), self.shared.clone(), ctx.clone(), self.wake.clone());
-            let op = req.get("op").and_then(Value::as_str).unwrap_or_default().to_string();
+            let op = steps.first().and_then(|r| r.get("op")).and_then(Value::as_str).unwrap_or_default().to_string();
             let spawned = std::thread::Builder::new().name("kopano-job".into()).spawn(move || {
                 // a join fetches the project from the teammate: up to 30 s to reach them
-                let r = connect(&config, Duration::from_secs(90)).and_then(|mut c| call(&mut c, req));
+                let mut first: Option<Value> = None;
+                let r = connect(&config, Duration::from_secs(90)).and_then(|mut c| {
+                    for (i, mut req) in steps.into_iter().enumerate() {
+                        if req.get("project").and_then(Value::as_str) == Some("$new") {
+                            req["project"] = first.as_ref().and_then(|v| v.get("project")).cloned().unwrap_or(Value::Null);
+                        }
+                        match call(&mut c, req) {
+                            Ok(v) if i == 0 => first = Some(v),
+                            Ok(_) => {}
+                            Err(e) if i == 0 => return Err(e),
+                            Err(e) => return Err(format!("Shared this library, but an invite did not go out: {e}")),
+                        }
+                    }
+                    Ok(())
+                });
                 let job = match r {
-                    Ok(v) => job_done(&op, &v),
+                    Ok(()) => job_done(&op, first.as_ref().unwrap_or(&Value::Null)),
                     Err(e) => Job { busy: false, ok: false, text: e, project: None },
                 };
                 lock(&shared).job = Some(job);
@@ -998,16 +1133,29 @@ pub fn job_done(op: &str, v: &Value) -> Job {
             Job {
                 busy: false,
                 ok: true,
-                text: format!("{shared}. Until invites by username arrive, your teammate joins with the ids under Advanced (testing)."),
+                text: format!("{shared}. Invite sent."),
                 project: v.get("project").and_then(Value::as_str).map(str::to_string),
             }
         }
-        "join" => Job {
+        "join" | "join-shared" => Job {
             busy: false,
             ok: true,
             text: "Joined. Your teammate's photos and edits arrive in a few seconds.".to_string(),
             project: v.get("project").and_then(Value::as_str).map(str::to_string),
         },
+        "sign-in" => Job {
+            busy: false,
+            ok: true,
+            text: format!("Check that the browser shows {}.", v.get("code").and_then(Value::as_str).unwrap_or_default()),
+            project: None,
+        },
+        "sign-in-cancel" => Job { busy: false, ok: true, text: "Sign-in stopped.".to_string(), project: None },
+        "sign-out" => Job { busy: false, ok: true, text: "Signed out of ThabangVision on this computer.".to_string(), project: None },
+        "invite" => Job { busy: false, ok: true, text: "Invite sent.".to_string(), project: None },
+        "remove-person" => Job { busy: false, ok: true, text: "Taken off the library.".to_string(), project: None },
+        "leave" => {
+            Job { busy: false, ok: true, text: "You left the library. It stays on this computer but no longer changes.".to_string(), project: None }
+        }
         "approve" => Job { busy: false, ok: true, text: "Approved. The changes are in your library.".to_string(), project: None },
         "decline" => Job { busy: false, ok: true, text: "Declined. Your library stays as it was.".to_string(), project: None },
         "view" => Job {

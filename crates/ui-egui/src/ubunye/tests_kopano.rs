@@ -186,6 +186,13 @@ struct FakeData {
     approve_member: AtomicBool,
     /// A live project with one open clash.
     live_clash: AtomicBool,
+    /// Not signed in, a sign-in waits in the browser for code BCDF-1234.
+    signing_in: AtomicBool,
+    /// ThabangVision people on the project; this side is its owner unless `member_role`.
+    people: AtomicBool,
+    member_role: AtomicBool,
+    /// "Shared with me" lists one library that is not on this computer.
+    shared_rows: AtomicBool,
 }
 
 struct Fake {
@@ -274,9 +281,37 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool, data: &FakeDa
                 return;
             }
             "hello" => {
-                json!({"device": ALICE, "name": "Alice", "account": "acct-alice", "signed_in": !data.signed_out.load(Ordering::SeqCst), "signed_in_until_ms": 1.8e12,
-                "projects": [{"id": PID, "name": "Shoot", "app": app(app_port)}]})
+                let waiting = data.signing_in.load(Ordering::SeqCst);
+                let out = data.signed_out.load(Ordering::SeqCst) || waiting;
+                json!({"device": ALICE, "name": if out { "" } else { "Alice" }, "account": if out { "" } else { "acct-alice" }, "signed_in": !out,
+                    "signed_in_until_ms": 1.8e12,
+                    "signing_in": if waiting { json!({"code": "BCDF-1234", "link": "http://localhost:3100/link?code=BCDF-1234", "until_ms": 1.8e12}) } else { Value::Null },
+                    "message": if out && !waiting { json!("This computer was unlinked from ThabangVision. Sign in again.") } else { Value::Null },
+                    "projects": if out { json!([]) } else { json!([{"id": PID, "name": "Shoot", "app": app(app_port)}]) }})
             }
+            "people" if data.people.load(Ordering::SeqCst) => {
+                let owner = !data.member_role.load(Ordering::SeqCst);
+                json!({"shared": "tv-1", "people": [
+                    {"user": "u-alice", "name": "Alice", "role": if owner { "owner" } else { "editor" }, "status": "active", "me": true, "online": true, "on_project": true},
+                    {"user": "u-bongi", "name": "Bongi", "role": if owner { "editor" } else { "owner" }, "status": "active", "me": false, "online": true, "on_project": true},
+                    {"user": "u-sipho", "name": "Sipho", "role": "editor", "status": "invited", "me": false, "online": false, "on_project": false}]})
+            }
+            "people" => json!({"shared": false, "people": []}),
+            "shared-projects" => {
+                let rows = if data.shared_rows.load(Ordering::SeqCst) {
+                    json!([{"shared": "tv-shared-77", "name": "Lindiwe's shoot", "project": NEW_PID, "role": "editor", "status": "invited", "here": false}])
+                } else {
+                    json!([])
+                };
+                json!({"mine": [], "shared": rows})
+            }
+            "sign-in" => json!({"code": "BCDF-1234", "link": "http://localhost:3100/link?code=BCDF-1234", "until_ms": 1.8e12}),
+            "sign-in-cancel" => json!("not signing in"),
+            "sign-out" => json!("signed out"),
+            "invite" => json!({"message": "Invite sent."}),
+            "remove-person" => json!({"removed": true}),
+            "leave" => json!({"left": true}),
+            "join-shared" => json!({"project": NEW_PID, "name": "Lindiwe's shoot"}),
             "status" => {
                 let mut st = json!({"head": "1234abcd", "name": "Shoot", "app": app(app_port),
                 "teammates": [{"device": M1, "name": "Member1", "account": "acct-m1", "online": true}], "online": {M1: "Member1"},
@@ -377,7 +412,7 @@ fn client_follows_a_fake_service_and_finds_it_again_after_a_restart() {
     let job = client.state().job.unwrap();
     assert!(job.ok, "{job:?}");
     assert_eq!(job.project.as_deref(), Some(NEW_PID));
-    assert!(job.text.starts_with("Shared 5 photos. Until invites"), "{}", job.text);
+    assert!(job.text.starts_with("Shared 5 photos. Invite sent."), "{}", job.text);
     let made = fake.requests("create-project");
     assert_eq!(made.len(), 1);
     assert_eq!(made[0]["app"], json!({"kind": "light-control", "port": 18123}));
@@ -485,8 +520,11 @@ fn without_a_sign_in_the_window_offers_one() {
     let mut h = app_with(config);
     ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
     assert!(h.step_until(T, |h| painted(h).contains("Sign in with ThabangVision")), "{}", painted(&h));
+    // nothing else shows until signed in; the service's sentence says why
+    assert!(painted(&h).contains("unlinked from ThabangVision") && !painted(&h).contains("Share this library"), "{}", painted(&h));
     ok(h.request("ui.clickWidget", json!({"id": "button:kopano-signIn"}), T));
-    assert!(h.step_until(T, |h| painted(h).contains("Sign-in is coming soon.")), "{}", painted(&h));
+    wait("the sign-in", T, || fake.requests("sign-in").len() == 1);
+    assert!(h.step_until(T, |h| painted(h).contains("Check that the browser shows BCDF-1234.")), "{}", painted(&h));
     no_protocol_words(&painted(&h));
 }
 
@@ -527,7 +565,7 @@ fn window_shares_through_its_fields_and_starts_the_control_port_on_demand() {
     type_into(&mut h, "kopano:shareName", "Owner shoot");
     type_into(&mut h, "kopano:shareAccount", "acct-m1");
     ok(h.request("ui.clickWidget", json!({"id": "button:kopano-share"}), T));
-    assert!(h.step_until(T, |h| painted(h).contains("Shared 5 photos. Until invites")), "{}", painted(&h));
+    assert!(h.step_until(T, |h| painted(h).contains("Shared 5 photos. Invite sent.")), "{}", painted(&h));
     let made = fake.requests("create-project");
     assert_eq!(made.len(), 1, "{made:?}");
     assert_eq!(made[0]["name"], "Owner shoot");
@@ -810,4 +848,86 @@ fn problems_are_said_in_plain_words() {
     }
     assert_eq!(plain("bad token"), "The collaboration service is not running. Restart Light.");
     assert_eq!(plain("Give the shared library a name"), "Give the shared library a name");
+}
+
+/// Sign in with ThabangVision: the code to check in the browser, Cancel, and Sign out.
+#[test]
+fn signing_in_shows_the_code_and_can_be_stopped_and_signed_out() {
+    let (fake, config, _home) = fake_service();
+    fake.data.signing_in.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(h.step_until(T, |h| painted(h).contains("Check that the browser shows BCDF-1234")), "{}", painted(&h));
+    assert!(!painted(&h).contains("Shared libraries"), "{}", painted(&h));
+    ok(h.request("ui.clickWidget", json!({"id": "button:kopano-signInCancel"}), T));
+    wait("the cancel", T, || fake.requests("sign-in-cancel").len() == 1);
+    assert!(h.step_until(T, |h| painted(h).contains("Sign-in stopped.")), "{}", painted(&h));
+    fake.data.signing_in.store(false, Ordering::SeqCst);
+    assert!(h.step_until(T, |h| painted(h).contains("Signed in to ThabangVision as Alice")), "{}", painted(&h));
+    ok(h.request("ui.clickWidget", json!({"id": "button:kopano-signOut"}), T));
+    wait("the sign-out", T, || fake.requests("sign-out").len() == 1);
+    assert!(h.step_until(T, |h| painted(h).contains("Signed out of ThabangVision on this computer.")), "{}", painted(&h));
+    no_protocol_words(&painted(&h));
+}
+
+/// Share by email: the library is made, then each email is invited ("Invite sent"). Live mode
+/// cannot take invites, so it is refused up front in plain words.
+#[test]
+fn share_by_email_invites_each_teammate() {
+    let (fake, config, _home) = fake_service();
+    let mut h = app_with(config);
+    h.app.kopano.start_control = Some(Box::new(|| Ok((18999, None))));
+    let share = |email: &str, mode: &str| json!({"command": "kopano.share", "params": {"name": "Shoot", "email": email, "mode": mode}});
+    let r = h.request("engine.execute", share("bongi@example.com", "live"), T);
+    assert!(r["error"].as_str().unwrap().contains("I approve changes"), "{r}");
+    ok(h.request("engine.execute", share("bongi@example.com, sipho@example.com", "approve"), T));
+    wait("the invites", T, || fake.requests("invite").len() == 2);
+    assert_eq!(fake.requests("create-project")[0]["members"], json!([]), "emails are invited, not made members");
+    let inv = fake.requests("invite");
+    assert_eq!((inv[0]["project"].as_str(), inv[0]["email"].as_str()), (Some(NEW_PID), Some("bongi@example.com")));
+    assert_eq!(inv[1]["email"], "sipho@example.com");
+}
+
+/// The people on a shared library by name and role (never emails); the owner invites and takes
+/// people off; a member may leave.
+#[test]
+fn people_by_name_with_invite_remove_and_leave() {
+    let (fake, config, _home) = fake_service();
+    fake.data.people.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(h.step_until(T, |h| painted(h).contains("Bongi")), "{}", painted(&h));
+    let p = painted(&h);
+    assert!(p.contains("Sipho") && p.contains("invited") && p.contains("can edit") && !p.contains('@'), "{p}");
+    let tag = short(PID);
+    type_into(&mut h, &format!("kopano:invite-{tag}"), "thandi@example.com");
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-invite-{tag}")}), T));
+    wait("the invite", T, || fake.requests("invite").len() == 1);
+    assert_eq!(fake.requests("invite")[0]["email"], "thandi@example.com");
+    assert!(h.step_until(T, |h| painted(h).contains("Invite sent.")), "{}", painted(&h));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-remove-{tag}-u-bongi")}), T));
+    wait("the removal", T, || fake.requests("remove-person").len() == 1);
+    assert_eq!(fake.requests("remove-person")[0]["user"], "u-bongi");
+    fake.data.member_role.store(true, Ordering::SeqCst);
+    wait("the job", T, || !h.app.kopano.client.state().job.as_ref().is_some_and(|j| j.busy));
+    assert!(h.step_until(T, |h| painted(h).contains("Leave this library")), "{}", painted(&h));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-leave-{tag}")}), T));
+    wait("the leave", T, || fake.requests("leave").len() == 1);
+    assert!(h.step_until(T, |h| painted(h).contains("You left the library.")), "{}", painted(&h));
+}
+
+/// "Shared with me": Open here brings it in with nothing typed.
+#[test]
+fn shared_with_me_opens_here() {
+    let (fake, config, _home) = fake_service();
+    fake.data.shared_rows.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    h.app.kopano.start_control = Some(Box::new(|| Ok((18999, None))));
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(h.step_until(T, |h| painted(h).contains("Lindiwe's shoot")), "{}", painted(&h));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-openShared-{}", short("tv-shared-77"))}), T));
+    wait("the open", T, || fake.requests("join-shared").len() == 1);
+    let r = &fake.requests("join-shared")[0];
+    assert_eq!(r["shared"], "tv-shared-77");
+    assert_eq!(r["app"], json!({"kind": "light-control", "port": 18999}));
 }

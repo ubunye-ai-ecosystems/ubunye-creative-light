@@ -4,8 +4,8 @@
 //! People see ThabangVision collaboration only: who they are signed in as, the shared libraries
 //! with their teammates by name (green dot when online), recent activity in plain words, and
 //! Share. No protocol names, device ids or project ids outside the collapsed "Advanced (testing)"
-//! section, which keeps the id-based Share / Join until ThabangVision invites by username replace
-//! it. The code keeps the protocol's name (Kopano) internally.
+//! section, which keeps the id-based Join for lab tests. People are invited by email, signed in
+//! with ThabangVision. The code keeps the protocol's name (Kopano) internally.
 //!
 //! Everything is a command: `kopano.panel` shows or hides the window, `kopano.share` and
 //! `kopano.join` are what its buttons run, `kopano.signIn` is the sign-in button,
@@ -60,6 +60,8 @@ pub struct KopanoPanel {
     /// The owner's pick per clash before approving: (project, member, item key) -> "member" |
     /// "main". Two members may change the same setting; each one's picks are their own.
     pub choices: BTreeMap<(String, String, String), String>,
+    /// The "Teammate's email" field under each shared library this person owns.
+    pub invite_email: BTreeMap<String, String>,
     pub join_project: String,
     pub join_from: String,
     /// Shared libraries an `attach` was sent for (once each).
@@ -89,6 +91,7 @@ impl KopanoPanel {
             share_account: String::new(),
             share_mode: "approve".to_string(),
             choices: BTreeMap::new(),
+            invite_email: BTreeMap::new(),
             join_project: String::new(),
             join_from: String::new(),
             attached: BTreeSet::new(),
@@ -119,6 +122,12 @@ fn control_port(app: &mut LightcraftApp) -> Result<u16, String> {
     Ok(port)
 }
 
+/// One request to the service as the window's job.
+fn simple(app: &mut LightcraftApp, busy: &str, req: Value) -> Result<Value, String> {
+    let ctx = app_ctx(app);
+    app.kopano.client.request(&ctx, busy, req).map(|()| json!({"started": true}))
+}
+
 fn text_param(p: &Value, key: &str, fallback: &str) -> String {
     p.get(key).and_then(Value::as_str).unwrap_or(fallback).trim().to_string()
 }
@@ -141,12 +150,28 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Va
             }
             Ok(json!({"open": app.kopano.open, "advanced": app.kopano.advanced}))
         }
-        "kopano.signIn" => {
-            // ThabangVision sign-in (the device certificate) is not built yet
-            let text = "Sign-in is coming soon.";
-            set_job(app, true, text);
-            Ok(json!({"message": text}))
+        "kopano.signIn" => simple(app, "Opening ThabangVision in your browser…", json!({"op": "sign-in"})),
+        "kopano.signInCancel" => simple(app, "Stopping…", json!({"op": "sign-in-cancel"})),
+        "kopano.signOut" => simple(app, "Signing out…", json!({"op": "sign-out"})),
+        "kopano.invite" => {
+            let (project, email) = (text_param(p, "project", ""), text_param(p, "email", ""));
+            let email = if email.is_empty() { app.kopano.invite_email.get(&project).cloned().unwrap_or_default().trim().to_string() } else { email };
+            if !email.contains('@') {
+                return Some(Err("Type the teammate's email address.".to_string()));
+            }
+            let r = simple(app, "Inviting…", json!({"op": "invite", "project": project, "email": email}));
+            if r.is_ok() {
+                app.kopano.invite_email.remove(&project);
+            }
+            r
         }
+        "kopano.removePerson" => simple(
+            app,
+            "Taking them off…",
+            json!({"op": "remove-person", "project": text_param(p, "project", ""), "user": text_param(p, "user", "")}),
+        ),
+        "kopano.leave" => simple(app, "Leaving…", json!({"op": "leave", "project": text_param(p, "project", "")})),
+        "kopano.openShared" => open_shared(app, p),
         "kopano.share" => share(app, p),
         "kopano.join" => join(app, p),
         "kopano.mode" => {
@@ -196,31 +221,37 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Va
     })
 }
 
-/// `kopano.share {name, account}`: share this library; `account` names the teammates who may
-/// join (comma separated). Without params, the window's fields.
+/// `kopano.share {name, email, mode}`: share this library; `email` names the teammates to invite
+/// (comma separated; a bare account id, for lab tests, becomes a member). Without params, the
+/// window's fields.
 fn share(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     let name = text_param(p, "name", &app.kopano.share_name);
-    let accounts: Vec<String> = text_param(p, "account", &app.kopano.share_account)
-        .split([',', ' ', ';'])
-        .map(str::trim)
-        .filter(|a| !a.is_empty())
-        .map(str::to_string)
-        .collect();
+    let typed = text_param(p, "email", &text_param(p, "account", &app.kopano.share_account));
+    let typed: Vec<String> = typed.split([',', ' ', ';']).map(str::trim).filter(|a| !a.is_empty()).map(str::to_string).collect();
+    // emails get an invite through ThabangVision; a bare account id (lab testing) becomes a member
+    let (emails, accounts): (Vec<String>, Vec<String>) = typed.into_iter().partition(|a| a.contains('@'));
     if name.is_empty() {
         return Err("Give the shared library a name".to_string());
     }
-    if accounts.is_empty() {
-        return Err("Type your teammate's account, so they may join".to_string());
+    if accounts.is_empty() && emails.is_empty() {
+        return Err("Type your teammate's email, so they can join".to_string());
     }
     let mode = text_param(p, "mode", &app.kopano.share_mode);
     if mode != "live" && mode != "approve" {
         return Err("The way to work is live or approve".to_string());
     }
+    if mode == "live" && !emails.is_empty() {
+        return Err("Inviting by email works with \"I approve changes\". Choose it, then press Share.".to_string());
+    }
     let port = control_port(app)?;
     let members: Vec<Value> = accounts.iter().map(|a| json!({"account": a, "role": "editor", "lanes": []})).collect();
     let req = json!({"op": "create-project", "name": name, "app": {"kind": "light-control", "port": port}, "members": members, "mode": mode});
+    let mut steps = vec![req];
+    steps.extend(emails.iter().map(|e| json!({"op": "invite", "project": "$new", "email": e})));
     let ctx = app_ctx(app);
-    app.kopano.client.request(&ctx, "Sharing…", req)?;
+    app.kopano.client.request_steps(&ctx, "Sharing…", steps)?;
+    // the invite is on its way: the teammate's email does not stay on screen
+    app.kopano.share_account.clear();
     Ok(json!({"started": true, "controlPort": port}))
 }
 
@@ -280,6 +311,20 @@ fn join(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     let req = json!({"op": "join", "project": project, "from": from, "app": {"kind": "light-control", "port": port}});
     let ctx = app_ctx(app);
     app.kopano.client.request(&ctx, "Joining…", req)?;
+    Ok(json!({"started": true, "controlPort": port}))
+}
+
+/// `kopano.openShared {shared}`: bring a library from "Shared with me" into this window, with
+/// nothing typed.
+fn open_shared(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
+    let shared = text_param(p, "shared", "");
+    if shared.is_empty() {
+        return Err("Say which shared library to open".to_string());
+    }
+    let port = control_port(app)?;
+    let req = json!({"op": "join-shared", "shared": shared, "app": {"kind": "light-control", "port": port}});
+    let ctx = app_ctx(app);
+    app.kopano.client.request(&ctx, "Opening…", req)?;
     Ok(json!({"started": true, "controlPort": port}))
 }
 
@@ -587,13 +632,37 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
                     RichText::new(format!("{} {}", crate::i18n::tr("Signed in to ThabangVision as"), me.name)).font(t.semibold(12.5)).color(t.text),
                 );
             });
-        }
-        // the service runs, but this computer's ThabangVision sign-in is missing or ran out
-        Some(_) => {
-            dim(ui, crate::i18n::tr("Work on this library together with your team."));
-            if text_button(ui, "kopano-signIn", "Sign in with ThabangVision", false).clicked() {
-                press(app, "kopano.signIn");
+            if text_button(ui, "kopano-signOut", "Sign out", false).clicked() {
+                press(app, "kopano.signOut");
             }
+        }
+        // the service runs, but this computer's ThabangVision sign-in is missing or ran out:
+        // nothing else shows until it is signed in
+        Some(_) => {
+            if let Some(w) = &state.signing_in {
+                ui.label(
+                    RichText::new(format!("{} {}", crate::i18n::tr("Check that the browser shows"), w.code)).font(t.semibold(12.5)).color(t.text),
+                );
+                dim(ui, crate::i18n::tr("Approve this computer there. This window carries on by itself."));
+                ui.horizontal(|ui| {
+                    if text_button(ui, "kopano-openSignIn", "Open the page again", false).clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(w.link.clone()));
+                    }
+                    if text_button(ui, "kopano-signInCancel", "Cancel", false).clicked() {
+                        press(app, "kopano.signInCancel");
+                    }
+                });
+            } else {
+                if let Some(m) = &state.account_message {
+                    ui.add(egui::Label::new(RichText::new(m).color(t.caution).size(11.5)).wrap());
+                }
+                dim(ui, crate::i18n::tr("Work on this library together with your team."));
+                if text_button(ui, "kopano-signIn", "Sign in with ThabangVision", false).clicked() {
+                    press(app, "kopano.signIn");
+                }
+            }
+            job_line(ui, state);
+            return;
         }
         None => {
             ui.horizontal(|ui| {
@@ -615,10 +684,12 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
     }
     for p in &state.projects {
         ui.label(RichText::new(&p.name).font(t.semibold(12.0)).color(t.text_label));
-        if p.teammates.is_empty() {
+        if !p.people.is_empty() {
+            people_section(app, ui, p);
+        } else if p.teammates.is_empty() {
             dim(ui, crate::i18n::tr("No teammate has joined yet."));
         }
-        for m in &p.teammates {
+        for m in p.teammates.iter().filter(|_| p.people.is_empty()) {
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 let on = m.online && state.running;
@@ -634,6 +705,19 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
         }
         if !p.clashes.is_empty() {
             clash_section(app, ui, p);
+        }
+    }
+
+    let waiting: Vec<kopano::SharedRow> = state.shared_with_me.iter().filter(|r| !r.here).cloned().collect();
+    if !waiting.is_empty() {
+        heading(ui, "Shared with me");
+        for r in waiting {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&r.name).color(t.text_label));
+                if text_button(ui, &format!("kopano-openShared-{}", kopano::short(&r.shared)), "Open here", false).clicked() {
+                    press_with(app, "kopano.openShared", json!({"shared": r.shared}));
+                }
+            });
         }
     }
 
@@ -654,10 +738,7 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
     ui.separator();
     heading(ui, "Share this library");
     TextField::singleline("kopano:shareName", &mut app.kopano.share_name).hint(crate::i18n::tr("Name for the shared library")).width(330.0).show(ui);
-    TextField::singleline("kopano:shareAccount", &mut app.kopano.share_account)
-        .hint(crate::i18n::tr("Teammate's ThabangVision account"))
-        .width(330.0)
-        .show(ui);
+    TextField::singleline("kopano:shareAccount", &mut app.kopano.share_account).hint(crate::i18n::tr("Teammate's email")).width(330.0).show(ui);
     ui.horizontal(|ui| {
         let approve = app.kopano.share_mode != "live";
         if text_button(ui, "kopano-modeApprove", "I approve changes", approve).clicked() {
@@ -689,6 +770,12 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
         app.kopano.advanced = !app.kopano.advanced;
     }
 
+    job_line(ui, state);
+}
+
+/// The last request's answer, at the bottom of the window.
+fn job_line(ui: &mut egui::Ui, state: &State) {
+    let t = Tokens::get(ui.ctx());
     if let Some(job) = &state.job {
         ui.add_space(4.0);
         let color = if job.busy {
@@ -703,10 +790,45 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
     }
 }
 
-/// Ids and the id-based Join, until ThabangVision invites by username replace them.
+/// The people on a shared library (names and what they may do, never emails). The owner invites
+/// by email and takes people off; anyone else may leave.
+fn people_section(app: &mut LightcraftApp, ui: &mut egui::Ui, p: &kopano::Project) {
+    let t = Tokens::get(ui.ctx());
+    let tag = kopano::short(&p.id).to_string();
+    let owner = p.people.iter().any(|x| x.me && x.role == "owner");
+    for x in &p.people {
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            dot(ui, x.online);
+            let who = if x.me { crate::i18n::tr("You").to_string() } else { x.name.clone() };
+            ui.label(RichText::new(who).color(t.text_label));
+            ui.label(RichText::new(crate::i18n::tr(x.role_text())).color(t.text_dim).size(11.5));
+            if owner && !x.me && text_button(ui, &format!("kopano-remove-{tag}-{}", kopano::short(&x.user)), "Remove", false).clicked() {
+                press_with(app, "kopano.removePerson", json!({"project": p.id, "user": x.user}));
+            }
+        });
+    }
+    if owner {
+        let mut email = app.kopano.invite_email.get(&p.id).cloned().unwrap_or_default();
+        let id = format!("kopano:invite-{tag}");
+        ui.horizontal(|ui| {
+            TextField::singleline(&id, &mut email).hint(crate::i18n::tr("Teammate's email")).width(240.0).show(ui);
+            if text_button(ui, &format!("kopano-invite-{tag}"), "Invite", false).clicked() {
+                app.kopano.invite_email.insert(p.id.clone(), email.clone());
+                press_with(app, "kopano.invite", json!({"project": p.id}));
+                return;
+            }
+            app.kopano.invite_email.insert(p.id.clone(), email);
+        });
+    } else if text_button(ui, &format!("kopano-leave-{tag}"), "Leave this library", false).clicked() {
+        press_with(app, "kopano.leave", json!({"project": p.id}));
+    }
+}
+
+/// Ids and the id-based Join (lab testing; people join through email invites).
 fn advanced(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State, ctx: &egui::Context) {
     let t = Tokens::get(ui.ctx());
-    dim(ui, crate::i18n::tr("For testing: ThabangVision invites by username will replace these ids."));
+    dim(ui, crate::i18n::tr("For testing: join with ids instead of an email invite."));
     if let Some(me) = &state.me {
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{} {}", crate::i18n::tr("Your device id"), kopano::short(&me.device))).color(t.text_dim).monospace());
