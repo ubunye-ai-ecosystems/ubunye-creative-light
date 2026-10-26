@@ -16,7 +16,7 @@ on:
       kopano_ref:
         description: "Branch, tag or commit of ubunye-creative-studio-tools holding research/kopano/lab"
         type: string
-        default: research/kopano-architecture
+        default: 5247b5d09816e328c524f75f5093d1db1132f7f0
   push:
     branches: [feature/kopano-installers]
     paths:
@@ -36,7 +36,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   LIGHTCRAFT_BUILD_SHA: ${{ github.sha }}
-  KOPANO_REF: ${{ inputs.kopano_ref || 'research/kopano-architecture' }}
+  KOPANO_REF: ${{ inputs.kopano_ref || '5247b5d09816e328c524f75f5093d1db1132f7f0' }}
   # kopanod's toolchain (as the studio-tools kopanod.yml); Light uses its rust-toolchain.toml.
   KOPANO_RUST: 1.97.0
 
