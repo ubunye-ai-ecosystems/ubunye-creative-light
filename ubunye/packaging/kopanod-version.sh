@@ -8,7 +8,8 @@
 # Needs the git history of the lab (CI: fetch-depth 0); without it the last number is 0.
 set -euo pipefail
 LAB="${1:?kopano lab dir}"
-v="$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\([0-9.]*\).*/\1/p}' "$LAB/Cargo.toml" | head -1)"
+# awk, not sed: the same on macOS (BSD) and Linux
+v="$(awk '/^\[/ { p = ($0 == "[workspace.package]") } p && /^version *=/ { gsub(/^[^"]*"|".*$/, ""); print; exit }' "$LAB/Cargo.toml")"
 [ -n "$v" ] || { echo "error: no [workspace.package] version in $LAB/Cargo.toml" >&2; exit 1; }
 n="$(git -C "$LAB" rev-list --count HEAD -- . 2>/dev/null || echo 0)"
 echo "$v.$n"

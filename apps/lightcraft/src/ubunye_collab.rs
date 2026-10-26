@@ -196,11 +196,7 @@ fn hidden(c: &mut Command) -> &mut Command {
 
 /// Run a command and wait (at most `limit`).
 fn wait_for(mut c: Command, what: &str, limit: Duration) -> Result<String, String> {
-    let mut child = hidden(&mut c)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("could not start {what}: {e}"))?;
+    let mut child = hidden(&mut c).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| format!("could not start {what}: {e}"))?;
     let start = Instant::now();
     loop {
         match child.try_wait() {
