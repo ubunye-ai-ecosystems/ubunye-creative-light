@@ -9,9 +9,12 @@
        - the C runtime linked in (+crt-static), like Light: no Visual C++ redistributable;
        - a version resource that names it "ThabangVision collaboration" (what Task Manager and
          Startup apps show; people never see the protocol's name).
-  2. Runs packaging/windows/package.ps1, which puts kopanod.exe beside lightcraft.exe in the MSI
-     (collab.wxs: also turns start at sign-in off on uninstall) and in the portable zip, and
-     signs it with the other programs when signing secrets are set (sign.ps1, unchanged).
+     Its version is kopanod's own (as ubunye/packaging/kopanod-version.sh: the lab's version and
+     its number of commits), not Light's, so the newest kopanod wins whichever app brought it.
+  2. Runs packaging/windows/package.ps1, which puts kopanod.exe in the MSI (collab.wxs: one
+     shared copy in Program Files\ThabangVision\Collaboration for all Ubunye apps, with start at
+     sign-in) and beside lightcraft.exe in the portable zip, and signs it with the other
+     programs when signing secrets are set (sign.ps1, unchanged).
 
   Output: $env:DIST (default dist/release), as package.ps1 names it.
   Needs what package.ps1 needs (Rust MSVC, Windows SDK, WiX 5.0.2) and the lab sources.
@@ -48,16 +51,21 @@ function Find-Rc {
   return $found.FullName
 }
 
-# The Light version (as package.ps1 reads it) also versions kopanod's resource.
-$Version = $env:LIGHTCRAFT_VERSION
-if (-not $Version) {
-  $inPkg = $false
-  foreach ($line in Get-Content (Join-Path $Root 'Cargo.toml')) {
-    if ($line -match '^\s*\[') { $inPkg = ($line.Trim() -eq '[workspace.package]'); continue }
-    if ($inPkg -and $line -match '^\s*version\s*=\s*"([^"]+)"') { $Version = $Matches[1]; break }
-  }
+# kopanod's own version, as ubunye/packaging/kopanod-version.sh: the lab's workspace version and
+# the number of commits that changed the lab (CI fetches its history). The MSI's file versioning
+# then never replaces a newer kopanod.exe with an older one.
+$LabVersion = $null
+$inPkg = $false
+foreach ($line in Get-Content (Join-Path $KopanoLab 'Cargo.toml')) {
+  if ($line -match '^\s*\[') { $inPkg = ($line.Trim() -eq '[workspace.package]'); continue }
+  if ($inPkg -and $line -match '^\s*version\s*=\s*"([0-9.]+)') { $LabVersion = $Matches[1]; break }
 }
-$Nums = @((($Version -split '-')[0] -split '\.') + @('0', '0', '0', '0') | Select-Object -First 4)
+if (-not $LabVersion) { throw "no [workspace.package] version in $KopanoLab\Cargo.toml" }
+$Commits = "$(git -C $KopanoLab rev-list --count HEAD -- . 2>$null)".Trim()
+if ($LASTEXITCODE -ne 0 -or $Commits -notmatch '^\d+$') { $Commits = '0' }
+$Nums = @(($LabVersion -split '\.') + @('0', '0', '0') | Select-Object -First 3) + @($Commits)
+$Version = $Nums -join '.'
+Write-Output "kopanod $Version"
 $Target = switch ($Arch) { 'x64' { 'x86_64-pc-windows-msvc' } 'x86' { 'i686-pc-windows-msvc' } 'arm64' { 'aarch64-pc-windows-msvc' } }
 $KTarget = if ($env:KOPANO_TARGET_DIR) { $env:KOPANO_TARGET_DIR } else { Join-Path $KopanoLab 'target' }
 $Work = Join-Path $KTarget "light-collab\$Arch"
@@ -88,7 +96,7 @@ BEGIN
       VALUE "FileVersion", "$vs"
       VALUE "InternalName", "kopanod"
       VALUE "OriginalFilename", "kopanod.exe"
-      VALUE "ProductName", "Ubunye Light"
+      VALUE "ProductName", "ThabangVision"
       VALUE "ProductVersion", "$Version"
       VALUE "LegalCopyright", "MIT OR Apache-2.0"
     END

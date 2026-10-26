@@ -1,0 +1,13 @@
+# Ubunye: start ThabangVision collaboration (kopanod) when a person signs in. Shipped in every
+# Ubunye app's .deb / .rpm; update-alternatives links /usr/lib/systemd/user/ to the copy of the
+# newest app installed (postinst.sh.in), and removes the link with the last app.
+[Unit]
+Description=ThabangVision collaboration
+
+[Service]
+ExecStart=/usr/bin/kopanod run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

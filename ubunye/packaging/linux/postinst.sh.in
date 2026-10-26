@@ -1,0 +1,27 @@
+#!/bin/sh
+# Ubunye: ThabangVision collaboration (kopanod) is shared by Ubunye Light, Photo and Film. Each
+# package carries its own copy in /usr/lib/@APP@/; /usr/bin/kopanod and the start-at-sign-in
+# unit are update-alternatives links to the newest copy installed (priority @PRIORITY@ is this
+# kopanod's version, @KOPANOD_VERSION@), so a computer runs one kopanod whatever apps it has, and
+# never an older one. Removing an app falls back to another app's copy (prerm.sh.in).
+# deb postinst gets "configure" (or abort-*), rpm %post the number of versions installed; both
+# (re)register: --install is idempotent and takes the new priority on an upgrade.
+ubunye_collab_install() {
+  ua="$(command -v update-alternatives || command -v alternatives || true)"
+  if [ -z "$ua" ]; then
+    echo "ThabangVision collaboration: update-alternatives not found, not set up" >&2
+    return 0
+  fi
+  # An older Ubunye package (before the shared install) owned a plain /usr/bin/kopanod; it goes
+  # when that package is upgraded. Until then the link cannot be made.
+  if [ -e /usr/bin/kopanod ] && [ ! -L /usr/bin/kopanod ]; then
+    echo "ThabangVision collaboration: /usr/bin/kopanod belongs to an older Ubunye app; upgrade it" >&2
+    return 0
+  fi
+  mkdir -p /usr/lib/systemd/user/default.target.wants
+  "$ua" --install /usr/bin/kopanod thabangvision-collab /usr/lib/@APP@/kopanod @PRIORITY@ \
+    --slave /usr/lib/systemd/user/thabangvision-collab.service thabangvision-collab.service /usr/lib/@APP@/thabangvision-collab.service \
+    --slave /usr/lib/systemd/user/default.target.wants/thabangvision-collab.service thabangvision-collab.wants /usr/lib/@APP@/thabangvision-collab.service \
+    || echo "ThabangVision collaboration: $ua --install failed" >&2
+}
+ubunye_collab_install

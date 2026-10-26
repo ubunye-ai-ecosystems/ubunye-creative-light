@@ -1,0 +1,31 @@
+#!/bin/sh
+# Ubunye: before the @APP@ .deb/.rpm is removed (not upgraded). ThabangVision collaboration
+# (kopanod) is shared with the other Ubunye apps (postinst.sh.in): this app's copy leaves the
+# alternatives, so /usr/bin/kopanod and the start-at-sign-in unit fall back to another app's
+# copy. Only when no Ubunye app is left does kopanod stop, for every user. Each person's service
+# folder (~/.local/share/kopano) stays, like their libraries.
+# deb prerm gets "remove" (or "upgrade" ...); rpm %preun the number of versions left (0 = removed).
+case "$1" in
+  remove | purge | 0) ;;
+  *) exit 0 ;;
+esac
+ua="$(command -v update-alternatives || command -v alternatives || true)"
+if [ -n "$ua" ]; then
+  "$ua" --remove thabangvision-collab /usr/lib/@APP@/kopanod >/dev/null 2>&1 || true
+fi
+# another Ubunye app still provides it: the running kopanod carries on (the newest copy left
+# takes over at the next start)
+if [ -e /usr/bin/kopanod ]; then
+  exit 0
+fi
+# the last one: stop it, and remove the per-user units older Ubunye builds made
+if command -v pkill >/dev/null 2>&1; then
+  pkill -f '^/usr/(bin|lib/[a-z-]+)/kopanod( |$)' || true
+fi
+for unit in /home/*/.config/systemd/user/kopano.service /root/.config/systemd/user/kopano.service; do
+  [ -f "$unit" ] || continue
+  if grep -q '/usr/bin/kopanod' "$unit"; then
+    rm -f "$unit" "$(dirname "$unit")/default.target.wants/kopano.service"
+  fi
+done
+exit 0

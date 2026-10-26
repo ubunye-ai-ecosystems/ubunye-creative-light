@@ -12,7 +12,8 @@
 #   MACOS_KEYCHAIN        keychain holding the identity (optional)
 # Notarization (env; all three needed, and a real identity):
 #   APPLE_ID, APPLE_PASSWORD (app-specific password), APPLE_TEAM_ID
-# Modified by Ubunye AI Ecosystems, 2026 (UBUNYE_EXTRA_BIN_DIR hook for ThabangVision collaboration).
+# Modified by Ubunye AI Ecosystems, 2026 (UBUNYE_EXTRA_BIN_DIR and UBUNYE_EXTRA_RESOURCES_DIR hooks
+# for ThabangVision collaboration).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -112,6 +113,11 @@ if [ -n "${UBUNYE_EXTRA_BIN_DIR:-}" ]; then
     EXTRA_BINS+=("$(basename "$x")")
     cp "$x" "$APP/Contents/MacOS/"
   done
+fi
+# Ubunye: files for Contents/Resources (kopanod.version, which Ubunye apps compare to pick the
+# newest kopanod), set by ubunye/packaging/macos/collab-package.sh; none otherwise.
+if [ -n "${UBUNYE_EXTRA_RESOURCES_DIR:-}" ]; then
+  cp "$UBUNYE_EXTRA_RESOURCES_DIR"/* "$APP/Contents/Resources/"
 fi
 cp "$ROOT/assets/app-icon/lightcraft.icns" "$APP/Contents/Resources/LightCraft.icns"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
