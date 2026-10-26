@@ -8,6 +8,8 @@
 #   macOS DMG: both apps in /Applications, each opened; the LaunchAgent stays with one kopanod,
 #     and after the app it names is trashed launchd no longer starts it.
 # Each pair is Light + Photo and Photo + Film (when a Film build exists). Nothing is released.
+# On a push it takes the latest successful build of each app (all three CI runs pin the same
+# kopanod, kopano_ref in ubunye-collab-packages.yml).
 name: ubunye-collab-interop
 
 on:
