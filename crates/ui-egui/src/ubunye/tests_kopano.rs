@@ -181,6 +181,8 @@ struct FakeData {
     signed_out: AtomicBool,
     /// The project is "I approve changes": this side owns it (pending work), or is the member.
     approve_owner: AtomicBool,
+    /// With `approve_owner`: Member2's changes wait too, clashing on the same photo setting.
+    two_members: AtomicBool,
     approve_member: AtomicBool,
     /// A live project with one open clash.
     live_clash: AtomicBool,
@@ -286,6 +288,13 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool, data: &FakeDa
                             "changes": [{"photo": "abcdef0123", "fields": []}],
                             "clashes": [{"key": "abcdef0123#develop", "photo": "abcdef0123", "fields": ["Light exposure"],
                                 "settings": [{"setting": "light.exposure", "main": -1.0, "member": 1.5}]}]}]});
+                    if data.two_members.load(Ordering::SeqCst) {
+                        let mut m2 = st["review"]["pending"][0].clone();
+                        m2["account"] = json!("acct-m2");
+                        m2["name"] = json!("Member2");
+                        m2["version"] = json!("v2");
+                        st["review"]["pending"].as_array_mut().unwrap().push(m2);
+                    }
                 } else if data.approve_member.load(Ordering::SeqCst) {
                     st["mode"] = json!("approve");
                     st["review"] = json!({"is_owner": false, "approver": false, "owner_name": "Alice", "declined": [], "pending": [], "viewing": null,
@@ -540,7 +549,7 @@ fn share_without_a_control_port_says_how_to_get_one() {
     let mut h = app_with(config);
     let r = h.request("engine.execute", json!({"command": "kopano.share", "params": {"name": "x", "account": "acct-m1"}}), T);
     assert_eq!(r["ok"], false);
-    assert!(r["error"].as_str().unwrap().contains("--control"), "{r}");
+    assert!(r["error"].as_str().unwrap().contains("can't be shared right now"), "{r}");
     let r = h.request("engine.execute", json!({"command": "kopano.share", "params": {"name": "", "account": "acct-m1"}}), T);
     assert!(r["error"].as_str().unwrap().contains("name"), "{r}");
 }
@@ -705,7 +714,7 @@ fn the_owner_reviews_views_approves_and_declines_from_the_window() {
         h.step();
     }
     // the clash: keep main's value for that photo, then approve with that pick
-    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-keepMain-{tag}-abcdef01")}), T));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-keepMain-{tag}-abcdef01-acct-m1")}), T));
     h.step();
     wait("the job", T, || !h.app.kopano.client.state().job.as_ref().is_some_and(|j| j.busy));
     ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-approve-{tag}-acct-m1")}), T));
@@ -759,4 +768,46 @@ fn a_live_clash_offers_both_values() {
     assert_eq!(fake.requests("resolve")[0]["pick"], "b");
     assert_eq!(fake.requests("resolve")[0]["clash"], "kopano/conflict/k/11-22");
     no_protocol_words(&painted(&h));
+}
+
+/// Review finding 5: two members changed the same setting. Each member's clash picks are their
+/// own: approving Member1 sends only Member1's picks and keeps Member2's for later.
+#[test]
+fn clash_picks_belong_to_one_member() {
+    let (fake, config, _home) = fake_service();
+    fake.data.approve_owner.store(true, Ordering::SeqCst);
+    fake.data.two_members.store(true, Ordering::SeqCst);
+    let mut h = app_with(config);
+    h.app.kopano.start_control = Some(Box::new(|| Ok((18999, None))));
+    ok(h.request("ui.menu.invoke", json!({"command": "kopano.panel"}), T));
+    assert!(h.step_until(T, |h| painted(h).contains("Member2 changed 3 photos")), "{}", painted(&h));
+    let tag = short(PID);
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-keepMain-{tag}-abcdef01-acct-m1")}), T));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-takeMember-{tag}-abcdef01-acct-m2")}), T));
+    let choose = |member: &str, key: &str, pick: &str| json!({"command": "kopano.choose", "params": {"project": PID, "member": member, "key": key, "pick": pick}});
+    ok(h.request("engine.execute", choose("acct-m2", "abcdef0123#develop", "main"), T));
+    ok(h.request("engine.execute", choose("acct-m2", "other#develop", "member"), T));
+    ok(h.request("ui.clickWidget", json!({"id": format!("button:kopano-approve-{tag}-acct-m1")}), T));
+    wait("the approve", T, || fake.requests("approve").len() == 1);
+    assert_eq!(fake.requests("approve")[0]["choices"], json!({"abcdef0123#develop": "main"}), "only Member1's picks");
+    let left: Vec<_> = h.app.kopano.choices.keys().cloned().collect();
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(left.iter().all(|(_, who, _)| who == "acct-m2"), "{left:?}");
+    wait("the job", T, || !h.app.kopano.client.state().job.as_ref().is_some_and(|j| j.busy));
+    ok(h.request("engine.execute", json!({"command": "kopano.decline", "params": {"project": PID, "member": "acct-m2", "version": "v2"}}), T));
+    assert!(h.app.kopano.choices.is_empty());
+    let r = h.request("engine.execute", json!({"command": "kopano.choose", "params": {"project": PID, "key": "x", "pick": "main"}}), T);
+    assert_eq!(r["ok"], false, "a pick without the member is refused");
+}
+
+/// Review finding 7: problems are said in plain words, never with a file path, the service's
+/// words or the protocol's name.
+#[test]
+fn problems_are_said_in_plain_words() {
+    for raw in ["the collaboration key file is missing (C:\\Users\\x\\AppData\\Local\\Kopano\\api.token)", "bad token", "unknown op create-project"] {
+        let said = plain(raw);
+        assert!(!said.contains('\\') && !said.contains('/') && !said.to_lowercase().contains("kopano") && !said.contains("op "), "{raw} -> {said}");
+    }
+    assert_eq!(plain("bad token"), "The collaboration service is not running. Restart Light.");
+    assert_eq!(plain("Give the shared library a name"), "Give the shared library a name");
 }

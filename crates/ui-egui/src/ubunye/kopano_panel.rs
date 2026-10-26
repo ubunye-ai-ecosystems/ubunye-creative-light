@@ -57,8 +57,9 @@ pub struct KopanoPanel {
     pub share_account: String,
     /// "approve" (default) or "live": how the next Share works.
     pub share_mode: String,
-    /// The owner's pick per clash before approving: (project, item key) -> "member" | "main".
-    pub choices: BTreeMap<(String, String), String>,
+    /// The owner's pick per clash before approving: (project, member, item key) -> "member" |
+    /// "main". Two members may change the same setting; each one's picks are their own.
+    pub choices: BTreeMap<(String, String, String), String>,
     pub join_project: String,
     pub join_from: String,
     /// Shared libraries an `attach` was sent for (once each).
@@ -108,7 +109,7 @@ fn control_port(app: &mut LightcraftApp) -> Result<u16, String> {
         return Ok(p);
     }
     let Some(start) = app.kopano.start_control.as_mut() else {
-        return Err("This window can't be shared: it has no control port (start Light with --control PORT)".to_string());
+        return Err("This window can't be shared right now. Restart Light and try again.".to_string());
     };
     let (port, rx) = start()?;
     if let Some(rx) = rx {
@@ -160,11 +161,12 @@ pub fn command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Result<Va
         "kopano.decline" => review_op(app, "decline", p),
         "kopano.view" => review_op(app, "view", p),
         "kopano.choose" => {
-            let (project, key, pick) = (text_param(p, "project", ""), text_param(p, "key", ""), text_param(p, "pick", "member"));
-            if project.is_empty() || key.is_empty() || (pick != "member" && pick != "main") {
-                return Some(Err("Say which library, which photo setting, and member or main".to_string()));
+            let (project, member, key) = (text_param(p, "project", ""), text_param(p, "member", ""), text_param(p, "key", ""));
+            let pick = text_param(p, "pick", "member");
+            if project.is_empty() || member.is_empty() || key.is_empty() || (pick != "member" && pick != "main") {
+                return Some(Err("Say which library, whose changes, which photo setting, and member or main".to_string()));
             }
-            app.kopano.choices.insert((project, key), pick.clone());
+            app.kopano.choices.insert((project, member, key), pick.clone());
             Ok(json!({"pick": pick}))
         }
         "kopano.setApprover" => {
@@ -238,8 +240,8 @@ fn review_op(app: &mut LightcraftApp, op: &str, p: &Value) -> Result<Value, Stri
     let busy = match op {
         "approve" => {
             let mut choices = serde_json::Map::new();
-            for ((pid, key), pick) in &app.kopano.choices {
-                if *pid == project {
+            for ((pid, who, key), pick) in &app.kopano.choices {
+                if *pid == project && *who == member {
                     choices.insert(key.clone(), json!(pick));
                 }
             }
@@ -258,7 +260,8 @@ fn review_op(app: &mut LightcraftApp, op: &str, p: &Value) -> Result<Value, Stri
     let ctx = app_ctx(app);
     app.kopano.client.request(&ctx, busy, req)?;
     if op == "approve" || op == "decline" {
-        app.kopano.choices.retain(|(pid, _), _| *pid != project);
+        // only this member's picks: another member's changes may still wait with their own
+        app.kopano.choices.retain(|(pid, who, _), _| *pid != project || *who != member);
     }
     Ok(json!({"started": true}))
 }
@@ -424,7 +427,7 @@ fn review_section(app: &mut LightcraftApp, ui: &mut egui::Ui, p: &kopano::Projec
             dim(ui, format!("{} {side}. {}", crate::i18n::tr("This window shows"), crate::i18n::tr("Editing waits until you press Done.")));
         }
         for c in &e.clashes {
-            let pick = app.kopano.choices.get(&(p.id.clone(), c.key.clone())).cloned().unwrap_or_else(|| "member".to_string());
+            let pick = app.kopano.choices.get(&(p.id.clone(), e.account.clone(), c.key.clone())).cloned().unwrap_or_else(|| "member".to_string());
             dim(
                 ui,
                 format!(
@@ -440,11 +443,11 @@ fn review_section(app: &mut LightcraftApp, ui: &mut egui::Ui, p: &kopano::Projec
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 let id = kopano::short(&c.photo).to_string();
-                if text_button(ui, &format!("kopano-keepMain-{tag}-{id}"), "Keep yours", pick == "main").clicked() {
-                    press_with(app, "kopano.choose", json!({"project": p.id, "key": c.key, "pick": "main"}));
+                if text_button(ui, &format!("kopano-keepMain-{tag}-{id}-{}", e.account), "Keep yours", pick == "main").clicked() {
+                    press_with(app, "kopano.choose", json!({"project": p.id, "member": e.account, "key": c.key, "pick": "main"}));
                 }
-                if text_button(ui, &format!("kopano-takeMember-{tag}-{id}"), "Take theirs", pick == "member").clicked() {
-                    press_with(app, "kopano.choose", json!({"project": p.id, "key": c.key, "pick": "member"}));
+                if text_button(ui, &format!("kopano-takeMember-{tag}-{id}-{}", e.account), "Take theirs", pick == "member").clicked() {
+                    press_with(app, "kopano.choose", json!({"project": p.id, "member": e.account, "key": c.key, "pick": "member"}));
                 }
             });
         }
@@ -601,7 +604,7 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
             if let Some(p) = &state.problem
                 && p != kopano::NOT_RUNNING
             {
-                dim(ui, p.clone());
+                dim(ui, kopano::plain(p));
             }
         }
     }
@@ -695,7 +698,8 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
         } else {
             t.caution
         };
-        ui.add(egui::Label::new(RichText::new(&job.text).color(color).size(11.5)).wrap());
+        let text = if job.ok || job.busy { job.text.clone() } else { kopano::plain(&job.text) };
+        ui.add(egui::Label::new(RichText::new(text).color(color).size(11.5)).wrap());
     }
 }
 

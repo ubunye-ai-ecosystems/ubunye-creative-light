@@ -1024,3 +1024,28 @@ pub fn job_done(op: &str, v: &Value) -> Job {
         _ => Job { busy: false, ok: true, text: "Done.".to_string(), project: None },
     }
 }
+
+/// What the window says about a problem: plain words, never a file path, the service's own
+/// words or the protocol's name (those stay in `kopano.status` and the log).
+pub fn plain(raw: &str) -> String {
+    let r = raw.to_lowercase();
+    let said = if raw == NOT_RUNNING
+        || ["key file", "api.token", "bad token", "could not start", "connect", "refused", "timed out", "broken pipe", "reset"]
+            .iter()
+            .any(|w| r.contains(w))
+    {
+        "The collaboration service is not running. Restart Light."
+    } else if raw.contains(['\\', '/'])
+        || r.contains("kopano")
+        || r.contains("op ")
+        || r.contains("missing")
+        || r.contains("unknown")
+        || r.contains("error")
+    {
+        "Something went wrong. Try again in a moment."
+    } else {
+        return raw.to_string();
+    };
+    log::info!("collaboration: {raw}");
+    said.to_string()
+}
