@@ -1,0 +1,157 @@
+# Ubunye-owned. Proof that Ubunye Light, Photo and Film share one kopanod (ThabangVision
+# collaboration) on a computer, on the real installers each app's own CI built
+# (ubunye-collab-packages.yml in ubunye-creative-light, -photo and -film):
+#   Linux .deb (Ubuntu, systemd user unit) and .rpm (Fedora): install A, then B, remove A
+#     (kopanod, its unit and the running service stay), remove B (all gone, data stays), and the
+#     other order (ubunye/packaging/linux/test-shared-install.sh).
+#   Windows MSI: the same with msiexec (ubunye/packaging/windows/test-shared-install.ps1).
+#   macOS DMG: both apps in /Applications, each opened; the LaunchAgent stays with one kopanod,
+#     and after the app it names is trashed launchd no longer starts it.
+# Each pair is Light + Photo and Photo + Film (when a Film build exists). Nothing is released.
+name: ubunye-collab-interop
+
+on:
+  workflow_dispatch:
+    inputs:
+      light_run:
+        description: "Run id of Light's ubunye-collab-packages (empty: the latest successful one)"
+        type: string
+        default: ""
+      photo_run:
+        description: "Run id of Photo's ubunye-collab-packages (empty: the latest successful one)"
+        type: string
+        default: ""
+      film_run:
+        description: "Run id of Film's ubunye-collab-packages (empty: the latest successful one)"
+        type: string
+        default: ""
+  push:
+    branches: [feature/kopano-installers]
+    paths:
+      - .github/workflows/ubunye-collab-interop.yml
+      - ubunye/packaging/linux/test-shared-install.sh
+      - ubunye/packaging/windows/test-shared-install.ps1
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ubunye-collab-interop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  ORG: ubunye-ai-ecosystems
+
+jobs:
+  find:
+    name: Find the app builds
+    runs-on: ubuntu-latest
+    outputs:
+      light: ${{ steps.f.outputs.light }}
+      photo: ${{ steps.f.outputs.photo }}
+      film: ${{ steps.f.outputs.film }}
+    steps:
+      - id: f
+        run: |
+          pick() { # <app> <branch> <given run id>
+            if [ -n "$3" ]; then echo "$3"; return; fi
+            gh run list -R "$ORG/ubunye-creative-$1" --workflow ubunye-collab-packages.yml --branch "$2" \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId // ""'
+          }
+          echo "light=$(pick light feature/kopano-installers '${{ inputs.light_run }}')" >>"$GITHUB_OUTPUT"
+          echo "photo=$(pick photo feature/kopano-panel '${{ inputs.photo_run }}')" >>"$GITHUB_OUTPUT"
+          echo "film=$(pick film feature/kopano-panel '${{ inputs.film_run }}')" >>"$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux ${{ matrix.kind }}
+    needs: find
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [deb, rpm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the packages
+        run: |
+          get() { # <app> <run id>
+            [ -n "$2" ] || { echo "no $1 build"; return 0; }
+            gh run download "$2" -R "$ORG/ubunye-creative-$1" -n "ubunye-$1-collab-linux-x86_64" -D "pkgs/$1"
+            ls -l "pkgs/$1"
+          }
+          get light '${{ needs.find.outputs.light }}'
+          get photo '${{ needs.find.outputs.photo }}'
+          get film '${{ needs.find.outputs.film }}'
+      - name: Install A, then B, remove A, remove B (both orders)
+        run: |
+          set -e
+          pairs="light:photo photo:film"
+          ran=0
+          for pair in $pairs; do
+            a=$(ls pkgs/${pair%%:*}/*.${{ matrix.kind }} 2>/dev/null | head -1)
+            b=$(ls pkgs/${pair##*:}/*.${{ matrix.kind }} 2>/dev/null | head -1)
+            if [ -z "$a" ] || [ -z "$b" ]; then echo "skip $pair: a package is missing"; continue; fi
+            echo "::group::$pair"
+            if [ "${{ matrix.kind }}" = deb ]; then
+              sudo ./ubunye/packaging/linux/test-shared-install.sh "$a" "$b"
+            else
+              docker run --rm -v "$PWD:/w" -w /w fedora:41 sh -c "dnf install -y -q procps-ng >/dev/null && ./ubunye/packaging/linux/test-shared-install.sh '$a' '$b'"
+            fi
+            echo "::endgroup::"
+            ran=$((ran + 1))
+          done
+          [ "$ran" -gt 0 ] || { echo "no pair could be tested"; exit 1; }
+
+  windows:
+    name: Windows MSI
+    needs: find
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the installers
+        shell: bash
+        run: |
+          get() {
+            [ -n "$2" ] || { echo "no $1 build"; return 0; }
+            gh run download "$2" -R "$ORG/ubunye-creative-$1" -n "ubunye-$1-collab-windows-x64" -D "pkgs/$1"
+            ls -l "pkgs/$1"
+          }
+          get light '${{ needs.find.outputs.light }}'
+          get photo '${{ needs.find.outputs.photo }}'
+          get film '${{ needs.find.outputs.film }}'
+      - name: Install A, then B, uninstall A, uninstall B (both orders)
+        shell: pwsh
+        run: |
+          $ran = 0
+          foreach ($pair in @(@('light', 'photo'), @('photo', 'film'))) {
+            $a = Get-ChildItem "pkgs/$($pair[0])/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+            $b = Get-ChildItem "pkgs/$($pair[1])/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $a -or -not $b) { "skip $($pair -join ' + '): an installer is missing"; continue }
+            "::group::$($pair -join ' + ')"
+            ./ubunye/packaging/windows/test-shared-install.ps1 $a.FullName $b.FullName
+            "::endgroup::"
+            $ran++
+          }
+          if ($ran -eq 0) { throw 'no pair could be tested' }
+
+  macos:
+    name: macOS DMG
+    needs: find
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the disk images
+        run: |
+          get() {
+            [ -n "$2" ] || { echo "no $1 build"; return 0; }
+            gh run download "$2" -R "$ORG/ubunye-creative-$1" -n "ubunye-$1-collab-macos" -D "pkgs/$1"
+            ls -l "pkgs/$1"
+          }
+          get light '${{ needs.find.outputs.light }}'
+          get photo '${{ needs.find.outputs.photo }}'
+          get film '${{ needs.find.outputs.film }}'
+      - name: Two apps, one LaunchAgent; a trashed app's kopanod is not started again
+        run: ./ubunye/packaging/macos/test-shared-install.sh pkgs/light/*.dmg pkgs/photo/*.dmg
