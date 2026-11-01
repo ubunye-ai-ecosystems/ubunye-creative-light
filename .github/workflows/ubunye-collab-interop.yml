@@ -62,9 +62,11 @@ jobs:
             gh run list -R "$ORG/ubunye-creative-$1" --workflow ubunye-collab-packages.yml --branch "$2" \
               --status success --limit 1 --json databaseId --jq '.[0].databaseId // ""'
           }
-          echo "light=$(pick light feature/kopano-installers '${{ inputs.light_run }}')" >>"$GITHUB_OUTPUT"
-          echo "photo=$(pick photo feature/kopano-panel '${{ inputs.photo_run }}')" >>"$GITHUB_OUTPUT"
-          echo "film=$(pick film feature/kopano-panel '${{ inputs.film_run }}')" >>"$GITHUB_OUTPUT"
+          {
+            echo "light=$(pick light feature/kopano-installers '${{ inputs.light_run }}')"
+            echo "photo=$(pick photo feature/kopano-panel '${{ inputs.photo_run }}')"
+            echo "film=$(pick film feature/kopano-panel '${{ inputs.film_run }}')"
+          } >>"$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
   linux:
@@ -93,8 +95,8 @@ jobs:
           pairs="light:photo photo:film"
           ran=0
           for pair in $pairs; do
-            a=$(ls pkgs/${pair%%:*}/*.${{ matrix.kind }} 2>/dev/null | head -1)
-            b=$(ls pkgs/${pair##*:}/*.${{ matrix.kind }} 2>/dev/null | head -1)
+            a=$(find "pkgs/${pair%%:*}" -maxdepth 1 -name "*.${{ matrix.kind }}" 2>/dev/null | sort | head -1)
+            b=$(find "pkgs/${pair##*:}" -maxdepth 1 -name "*.${{ matrix.kind }}" 2>/dev/null | sort | head -1)
             if [ -z "$a" ] || [ -z "$b" ]; then echo "skip $pair: a package is missing"; continue; fi
             echo "::group::$pair"
             if [ "${{ matrix.kind }}" = deb ]; then
