@@ -18,6 +18,7 @@
 //! On Windows, release builds are GUI-subsystem programs: launching the app opens no console
 //! window (issue #7). Their `--help` / `--version` output and diagnostics then have no console to
 //! go to; use `lightcraft-cli` (a console program) from a terminal, or a debug build.
+// Modified by Ubunye AI Ecosystems, 2026.
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -28,6 +29,7 @@ mod dialog_filter;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod ubunye_collab;
 
 use dialog_filter::FileDialogExt as _;
 use lightcraft_engine::Session;
@@ -566,7 +568,9 @@ fn open_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: boo
 /// and offers Try Again / Choose Another Library… / Continue Without Saving / Quit (issue #100).
 fn open_library_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
     if in_memory {
-        return (if seed_demo { Session::with_demo() } else { Session::new() }.with_fs().with_default_denoise_models().with_system_clock(), None);
+        // Ubunye: smart previews work in memory too (a throwaway folder, removed on exit)
+        let s = if seed_demo { Session::with_demo() } else { Session::new() };
+        return (s.with_fs().with_default_denoise_models().with_system_clock().with_memory_smart_previews(), None);
     }
     let unopened = || Session::new().with_fs().with_default_denoise_models().with_system_clock();
     let Some(dir) = dir else {
@@ -790,6 +794,11 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
+            // Ubunye: Kopano's Share / Join reach this window through the control port
+            app.kopano.start_control = Some(control_server::on_demand(control_port, cc.egui_ctx.clone()));
+            app.kopano.control_port = control_port;
+            // Ubunye: start ThabangVision collaboration (kopanod, shipped beside the app) if needed
+            ubunye_collab::start_in_background();
             if let Some(mut p) = problem {
                 // imported once the user has chosen where (into the library, or the temporary session)
                 p.pending_import = files;

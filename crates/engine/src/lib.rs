@@ -277,6 +277,9 @@ pub struct Session {
     /// Untouched Local records of folders not browsed for this many days are forgotten when the
     /// library opens (0 = never; persisted in prefs.json). See `cmd/browse.rs`.
     pub forget_local_days: u32,
+    /// Ubunye: the throwaway smart previews folder of a session without a library on disk
+    /// (`--memory`), removed when the session ends. See [`cmd::smart_share`].
+    pub smart_scratch: Option<std::sync::Arc<cmd::smart_share::Scratch>>,
 }
 
 impl Default for Session {
@@ -356,6 +359,7 @@ impl Session {
             cache_mb: 0,
             smart_previews_dir: None,
             forget_local_days: lightcraft_catalog::DEFAULT_FORGET_DAYS,
+            smart_scratch: None,
         }
     }
 

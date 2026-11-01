@@ -20,6 +20,7 @@
 //! The import dialog first calls [`scan`] (`library.importPreview`): the same expansion, probing
 //! and duplicate detection without adding anything, so the user can review the candidates. The
 //! probes are kept and reused by the import that follows.
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -188,6 +189,10 @@ pub struct ImportReport {
     /// [`OnDeleted::Restore`]: photos brought back from Recently Deleted instead of imported.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub restored: Vec<u64>,
+    /// Ubunye: photos shown from a shared smart preview that their original (imported now) took
+    /// over, settings kept (also listed in `imported`).
+    #[serde(rename = "fromSmartPreview", skip_serializing_if = "Vec::is_empty")]
+    pub from_smart_preview: Vec<u64>,
     /// Move: the originals that were moved (and removed from the source).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub moved: Vec<Moved>,
@@ -532,7 +537,11 @@ impl ScanInput {
                 };
                 by_path.insert(PathBuf::from(path), (p.id, c));
             }
-            if let Some(h) = &p.content_hash {
+            // Ubunye: a photo shown from a shared smart preview is not a duplicate of its original
+            // (the original takes it over on import, see `commit_prepared`)
+            if let Some(h) = &p.content_hash
+                && !crate::cmd::smart_share::is_stand_in(p)
+            {
                 by_hash.insert(h.clone(), p.id);
             }
         }
@@ -787,7 +796,9 @@ impl ImportJob {
             if let Source::File { path } = &p.source {
                 by_path.insert(path.clone(), (p.id, p.local));
             }
-            if let Some(h) = &p.content_hash {
+            if let Some(h) = &p.content_hash
+                && !crate::cmd::smart_share::is_stand_in(p)
+            {
                 by_hash.insert(h.clone(), Some(p.id));
             }
         }
@@ -1195,6 +1206,10 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     }
     let mut purge: Vec<PhotoId> = Vec::new();
     let mut purged: std::collections::HashSet<PhotoId> = Default::default();
+    // Ubunye: photos shown from a shared smart preview, by their original's content hash: the
+    // original, when it comes, takes the photo over (its settings, history and ratings kept)
+    let mut stand_ins = crate::cmd::smart_share::stand_ins_by_hash(&s.catalog);
+    let mut took_over: Vec<PhotoId> = Vec::new();
     for it in prepared.items {
         match it {
             PreparedItem::Promote(id) => {
@@ -1224,6 +1239,17 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
             PreparedItem::Ready(r) => {
                 let ReadyFile { path, stored, info, sidecar, placed: pl } = *r;
                 placed.extend(pl);
+                if let Some(sid) = info.content_hash.as_ref().and_then(|h| stand_ins.remove(h))
+                    && let Some(old) = s.catalog.photo(sid)
+                {
+                    let name = Path::new(&stored).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
+                    ops.push(crate::cmd::smart_share::replace_op(crate::cmd::smart_share::adopt_file(old, &stored, &name, &info)));
+                    new_hash.extend(info.content_hash.clone().map(|h| (h, sid)));
+                    report.imported.push(sid.0);
+                    report.from_smart_preview.push(sid.0);
+                    took_over.push(sid);
+                    continue;
+                }
                 let id = s.catalog.alloc_photo_id();
                 if let Some(h) = &info.content_hash {
                     new_hash.insert(h.clone(), id);
@@ -1293,6 +1319,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
         placed.iter().for_each(crate::import_move::rollback);
         return Err(e);
     }
+    // the photos taken over render from their originals now, not from the decoded proxy
+    took_over.iter().for_each(|id| s.media.forget(*id));
     if !placed.is_empty() {
         finish_moves(s, placed, log0, &mut report);
     }

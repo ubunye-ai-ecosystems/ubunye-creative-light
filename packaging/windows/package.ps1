@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
   Build, sign and package LightCraft for Windows.
+  (Modified by Ubunye AI Ecosystems, 2026: UBUNYE_EXTRA_BIN_DIR / UBUNYE_EXTRA_WXS hooks.)
 
 .DESCRIPTION
   Produces, in $env:DIST (default: dist/release):
@@ -112,8 +113,16 @@ $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'lightcraft.exe'), (Join-Path $Bin 'lightcraft-cli.exe') $Stage
+# Ubunye: programs shipped beside Light (kopanod, ThabangVision collaboration) and the WiX
+# fragment that installs them. Set by ubunye/packaging/windows/collab-package.ps1; empty otherwise.
+$ExtraExes = @()
+$ExtraWix = @()
+if ($env:UBUNYE_EXTRA_BIN_DIR) {
+  $ExtraExes = @(Get-ChildItem (Join-Path $env:UBUNYE_EXTRA_BIN_DIR '*.exe') | ForEach-Object { Copy-Item $_.FullName $Stage -PassThru } | ForEach-Object FullName)
+  if ($env:UBUNYE_EXTRA_WXS) { $ExtraWix = @($env:UBUNYE_EXTRA_WXS, '-d', "CollabBinDir=$Stage") }
+}
 
-& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'lightcraft.exe') (Join-Path $Stage 'lightcraft-cli.exe')
+& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'lightcraft.exe') (Join-Path $Stage 'lightcraft-cli.exe') @ExtraExes
 
 # ---- MSI ---------------------------------------------------------------------------------------
 # Extensions must match the WiX tool version (5.0.2, see release.yml). Re-adding is harmless.
@@ -133,7 +142,7 @@ New-PanelBitmap $UiBannerBmp 493 58 0 ([byte[]](0xFF, 0xFF, 0xFF)) ([byte[]](0xF
 
 $Msi = Join-Path $Dist "lightcraft-$Version-windows-$Arch.msi"
 Invoke-Native 'wix build' {
-  wix build (Join-Path $PSScriptRoot 'lightcraft.wxs') -arch $Arch -culture en-us @ExtArgs `
+  wix build (Join-Path $PSScriptRoot 'lightcraft.wxs') @ExtraWix -arch $Arch -culture en-us @ExtArgs `
     -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\lightcraft.ico')" `
     -d "UiDialogBmp=$UiDialogBmp" -d "UiBannerBmp=$UiBannerBmp" `
     -o $Msi

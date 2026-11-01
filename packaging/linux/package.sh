@@ -13,6 +13,8 @@
 # (downloaded into $CARGO_TARGET_DIR if missing). Build on an old distro (CI: Ubuntu 22.04,
 # glibc 2.35) so the binaries run on newer ones. Optional: desktop-file-validate, appstreamcli,
 # zsyncmake (the zsync package) for the AppImage's .zsync.
+# Modified by Ubunye AI Ecosystems, 2026 (UBUNYE_EXTRA_BIN_DIR, UBUNYE_LINUX_PKGLIB_DIR,
+# UBUNYE_LINUX_POSTINSTALL and UBUNYE_LINUX_PREREMOVE hooks).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -52,6 +54,18 @@ rm -rf "$WORK"
 # ---- stage an FHS tree (shared by every format) -------------------------------------------------
 install -Dm755 "$BIN/lightcraft" "$STAGE/usr/bin/lightcraft"
 install -Dm755 "$BIN/lightcraft-cli" "$STAGE/usr/bin/lightcraft-cli"
+# Ubunye: programs shipped beside Light (kopanod, ThabangVision collaboration), set by
+# ubunye/packaging/linux/collab-package.sh; none otherwise. In usr/bin of the .tar.gz and the
+# AppImage; the .deb and .rpm put them in /usr/lib/lightcraft/ instead (shared with the other
+# Ubunye apps through update-alternatives, see below).
+EXTRA_BINS=()
+if [ -n "${UBUNYE_EXTRA_BIN_DIR:-}" ]; then
+  for x in "$UBUNYE_EXTRA_BIN_DIR"/*; do
+    [ -f "$x" ] || continue
+    EXTRA_BINS+=("$(basename "$x")")
+    install -Dm755 "$x" "$STAGE/usr/bin/$(basename "$x")"
+  done
+fi
 strip "$STAGE/usr/bin/lightcraft" "$STAGE/usr/bin/lightcraft-cli" 2>/dev/null || true
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 install -Dm644 "$HERE/$APP_ID.mime.xml" "$STAGE/usr/share/mime/packages/$APP_ID.xml"
@@ -87,6 +101,27 @@ if has deb || has rpm; then
   export NFPM_ARCH="$DEB_ARCH"
   # nfpm expands env vars in fields like `version` and `arch`, but not in `contents[].src`.
   sed "s|\${STAGE}|$STAGE|g" "$HERE/nfpm.yaml" >"$WORK/nfpm.yaml"
+  # Ubunye: the extra programs and UBUNYE_LINUX_PKGLIB_DIR's files (the start-at-sign-in unit)
+  # go to /usr/lib/lightcraft/, never /usr/bin, so packages of different Ubunye apps never own
+  # the same file; UBUNYE_LINUX_POSTINSTALL (it replaces postinst.sh, so it must refresh the
+  # caches too) and UBUNYE_LINUX_PREREMOVE link and unlink the shared /usr/bin/kopanod.
+  add_line() { # <section> <line>
+    awk -v s="$1:" -v l="$2" '{ print } $0 == s { print l }' "$WORK/nfpm.yaml" >"$WORK/nfpm.yaml.new" && mv "$WORK/nfpm.yaml.new" "$WORK/nfpm.yaml"
+  }
+  for x in ${EXTRA_BINS[@]+"${EXTRA_BINS[@]}"}; do
+    add_line contents "  - { src: $STAGE/usr/bin/$x, dst: /usr/lib/lightcraft/$x, file_info: { mode: 0755 } }"
+  done
+  if [ -n "${UBUNYE_LINUX_PKGLIB_DIR:-}" ]; then
+    for x in "$UBUNYE_LINUX_PKGLIB_DIR"/*; do
+      if [ -f "$x" ]; then add_line contents "  - { src: $x, dst: /usr/lib/lightcraft/$(basename "$x"), file_info: { mode: 0644 } }"; fi
+    done
+  fi
+  if [ -n "${UBUNYE_LINUX_POSTINSTALL:-}" ]; then
+    sed -i "s|^  postinstall: .*|  postinstall: $UBUNYE_LINUX_POSTINSTALL|" "$WORK/nfpm.yaml"
+  fi
+  if [ -n "${UBUNYE_LINUX_PREREMOVE:-}" ]; then
+    add_line scripts "  preremove: $UBUNYE_LINUX_PREREMOVE"
+  fi
   for fmt in deb rpm; do
     if has "$fmt"; then (cd "$ROOT" && nfpm package -f "$WORK/nfpm.yaml" -p "$fmt" -t "$DIST/$BASENAME.$fmt"); fi
   done

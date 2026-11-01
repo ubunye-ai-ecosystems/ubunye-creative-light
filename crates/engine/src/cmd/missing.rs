@@ -2,6 +2,7 @@
 //! renamed, on an unplugged drive), and relinking them — one at a time (`photo.relink`) or by
 //! searching a folder for files with the same name and size, or the same content
 //! (`library.findMissing`).
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -74,7 +75,15 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
     if s.media.file_probe.is_some()
         && let (Some(Ok(info)), Some(ph)) = (crate::import::probe_paths(s, std::slice::from_ref(&abs)).pop(), s.catalog.photo(id))
     {
-        ops.extend(crate::cmd::convert::content_op(id, ph, info));
+        // Ubunye: a file of another kind or format (a JPEG relinked to its raw, a photo shown from
+        // a shared smart preview linked to its original) is described by the file: the record is
+        // replaced under the same id, its settings, history, ratings and albums kept
+        if info.kind != ph.kind || !info.format.eq_ignore_ascii_case(&ph.format) || crate::cmd::smart_share::is_stand_in(ph) {
+            let name = Path::new(&abs).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| abs.clone());
+            ops = vec![crate::cmd::smart_share::replace_op(crate::cmd::smart_share::adopt_file(ph, &abs, &name, &info))];
+        } else {
+            ops.extend(crate::cmd::convert::content_op(id, ph, info));
+        }
     }
     let op = match <[Op; 1]>::try_from(ops) {
         Ok([op]) => op,

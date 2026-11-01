@@ -6,6 +6,7 @@
 //! one error reply and the connection is closed, so nothing after it is executed. Lines are
 //! bounded ([`MAX_LINE`]) and so is the number of open connections ([`MAX_CONNECTIONS`]); junk
 //! never reaches the UI thread. See `docs/control-protocol.md`.
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -35,6 +36,31 @@ pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
     log::info!("control server listening on 127.0.0.1:{port}");
     std::thread::spawn(move || accept_loop(listener, tx, ctx));
     rx
+}
+
+/// Ubunye, Kopano panel: the port the Kopano service reaches this window on. With `--control`
+/// (`fixed`) it is that port; otherwise the first call starts the server on a free loopback port
+/// and hands back its request channel. Later calls return the same port.
+pub fn on_demand(fixed: Option<u16>, ctx: egui::Context) -> lightcraft_ui_egui::ubunye::kopano_panel::StartControl {
+    let mut port = fixed;
+    Box::new(move || {
+        if let Some(p) = port {
+            return Ok((p, None));
+        }
+        let (p, rx) = start_free(ctx.clone())?;
+        port = Some(p);
+        Ok((p, Some(rx)))
+    })
+}
+
+/// Start the server on a free loopback port: the port and the request channel.
+pub fn start_free(ctx: egui::Context) -> Result<(u16, Receiver<ControlRequest>), String> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("could not open a control port: {e}"))?;
+    let port = listener.local_addr().map_err(|e| format!("could not open a control port: {e}"))?.port();
+    let (tx, rx) = channel::<ControlRequest>();
+    std::thread::Builder::new().name("control-server".into()).spawn(move || accept_loop(listener, tx, ctx)).map_err(|e| e.to_string())?;
+    log::info!("control server listening on 127.0.0.1:{port} (for Kopano)");
+    Ok((port, rx))
 }
 
 fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context) {
@@ -241,6 +267,37 @@ mod tests {
         assert_eq!(read_bounded_line(&mut &input[..], &mut buf, 10), Ok(true));
         assert_eq!(buf, line);
         assert!(read_bounded_line(&mut &[b'a'; 11][..], &mut buf, 10).is_err());
+    }
+
+    #[test]
+    fn on_demand_starts_one_server_on_a_free_port() {
+        let mut start = on_demand(None, egui::Context::default());
+        let (port, rx) = start().unwrap();
+        let rx = rx.expect("the first call starts the server");
+        assert_ne!(port, 0);
+        // the second call keeps it
+        let (again, none) = start().unwrap();
+        assert_eq!(again, port);
+        assert!(none.is_none());
+        // a request on the port reaches the app's channel, and the reply goes back
+        let mut c = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        c.write_all(
+            b"{\"id\":3,\"method\":\"ui.inspect\"}
+",
+        )
+        .unwrap();
+        let req = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(req.method, "ui.inspect");
+        req.reply.send(json!({"ok": true, "result": "hi"})).unwrap();
+        let mut line = String::new();
+        BufReader::new(c).read_line(&mut line).unwrap();
+        assert!(line.contains("\"id\":3") && line.contains("hi"), "{line}");
+        // with --control the given port is used and nothing new starts
+        let mut fixed = on_demand(Some(18555), egui::Context::default());
+        let (p, rx) = fixed().unwrap();
+        assert_eq!(p, 18555);
+        assert!(rx.is_none());
     }
 
     #[test]

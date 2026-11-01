@@ -3,6 +3,7 @@
 //! The UI is thin: every action goes through [`LightcraftApp::run`], which handles UI commands
 //! (views, panels, zoom — see [`menus::ui_commands`]) and forwards everything else to the engine.
 //! The same entry point serves menus, shortcuts, buttons and the control channel ([`control`]).
+// Modified by Ubunye AI Ecosystems, 2026.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -34,6 +35,7 @@ pub mod tasks;
 pub mod text_field;
 pub mod theme;
 pub mod titlebar;
+pub mod ubunye;
 pub mod widgets;
 
 #[cfg(test)]
@@ -324,6 +326,8 @@ pub struct LightcraftApp {
     pub library_problem: Option<panels::library_problem::LibraryProblem>,
     /// The activity stack shows every task, not just the first few ("+N more" was clicked).
     pub activity_expanded: bool,
+    /// Ubunye: the Kopano window and its client for the co-editing service (`ubunye::kopano`).
+    pub kopano: ubunye::kopano_panel::KopanoPanel,
 }
 
 impl LightcraftApp {
@@ -390,6 +394,7 @@ impl LightcraftApp {
             display_error: None,
             library_problem: None,
             activity_expanded: false,
+            kopano: Default::default(),
             model_setup: Default::default(),
         }
     }
@@ -1068,6 +1073,7 @@ impl LightcraftApp {
         panels::library_problem::show(self, &ctx);
         export_task::poll(self, &ctx);
         panels::activity::show(self, &ctx);
+        ubunye::kopano_panel::show(self, &ctx);
         pick::poll(self, &ctx);
         panels::grid::drag_feedback(self, &ctx);
         panels::left::album_drag_feedback(self, &ctx);

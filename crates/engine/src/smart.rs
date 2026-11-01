@@ -4,6 +4,7 @@
 //! 0..1 by a stored factor, sRGB-encoded and saved as a JPEG after a one-line header. The header
 //! also keeps the decoder's file-local camera tone curve (Sony ARW camera look), which is applied
 //! at render time and is not baked into the pixels.
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use lightcraft_color::transfer::linear_to_srgb;
 use lightcraft_pipeline::tone::CameraTone;
 use lightcraft_raster::{Rgb32f, Rgba8};
 
-const MAGIC: &[u8] = b"LCSP1\n";
+pub(crate) const MAGIC: &[u8] = b"LCSP1\n";
 
 /// The proxy's file name for a photo (by its content, so copies share one).
 pub fn file_name(p: &Photo) -> String {

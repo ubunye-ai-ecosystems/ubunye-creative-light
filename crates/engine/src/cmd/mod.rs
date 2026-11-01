@@ -3,6 +3,7 @@
 //! Command ids group by area: `library.*` (view/selection), `photo.*` (rating, flags, rotate,
 //! delete), `album.*`, `develop.*` (settings), `crop.*`, `mask.*`, `preset.*`, `version.*`,
 //! `edit.*` (undo/redo), and queries (`catalog.query`, `photo.inspect`, `develop.get`…).
+// Modified by Ubunye AI Ecosystems, 2026.
 
 mod activity;
 mod before;
@@ -32,6 +33,7 @@ mod prefs;
 mod preset_files;
 pub mod previews;
 mod query;
+pub mod smart_share;
 mod sync;
 mod xmp;
 
@@ -156,6 +158,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(face_detect::specs());
         v.extend(face_recognize::specs());
         v.extend(activity::specs());
+        v.extend(smart_share::specs());
         v
     })
 }

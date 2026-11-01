@@ -1,4 +1,5 @@
 //! Read-only queries (not journaled): catalog, photos, develop state, controls, presets, albums.
+// Modified by Ubunye AI Ecosystems, 2026.
 
 use lightcraft_catalog::{Album, Photo, PhotoId};
 use lightcraft_develop::{CONTROLS, controls};
@@ -57,6 +58,23 @@ fn photo_arg(s: &Session, p: &Value, c: &str) -> crate::Result<PhotoId> {
         Some(id) => Err(bad(c, format!("no such photo {}", id.0))),
         None => s.active().ok_or_else(|| bad(c, "no photo")),
     }
+}
+
+/// `photo.inspect` for one photo: the catalog record plus albums, history labels and stack.
+fn inspect(s: &Session, id: PhotoId) -> Option<Value> {
+    let ph = s.catalog.photo(id)?;
+    let mut v = serde_json::to_value(ph.as_ref()).unwrap_or_default();
+    v["albums"] = json!(s.catalog.albums_of(id).iter().map(|a| a.0).collect::<Vec<_>>());
+    v["history"] = json!(ph.history.iter().map(|h| h.label.clone()).collect::<Vec<_>>());
+    if let Some(st) = s.catalog.stack_of(id) {
+        v["stack"] = json!({
+            "id": st.id.0,
+            "photos": st.photos.iter().map(|p| p.0).collect::<Vec<_>>(),
+            "position": st.position(id),
+            "collapsed": st.collapsed,
+        });
+    }
+    Some(v)
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -137,19 +155,16 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         cmd!(query "photo.inspect", "Inspect Photo", [], None, "{id?}", always, |s, p| {
             let id = photo_arg(s, p, "photo.inspect")?;
-            let ph = s.catalog.photo(id).ok_or_else(|| bad("photo.inspect", "no such photo"))?;
-            let mut v = serde_json::to_value(ph.as_ref()).unwrap_or_default();
-            v["albums"] = json!(s.catalog.albums_of(id).iter().map(|a| a.0).collect::<Vec<_>>());
-            v["history"] = json!(ph.history.iter().map(|h| h.label.clone()).collect::<Vec<_>>());
-            if let Some(st) = s.catalog.stack_of(id) {
-                v["stack"] = json!({
-                    "id": st.id.0,
-                    "photos": st.photos.iter().map(|p| p.0).collect::<Vec<_>>(),
-                    "position": st.position(id),
-                    "collapsed": st.collapsed,
-                });
-            }
-            Ok(v)
+            inspect(s, id).ok_or_else(|| bad("photo.inspect", "no such photo"))
+        }),
+        // Ubunye (Kopano): every photo in one request. Kopano compares the whole library each
+        // second; one `photo.inspect` per photo costs a UI frame each (16 ms), 24 photos 0.4 s.
+        cmd!(query "photo.inspectMany", "Inspect Photos", [], None, "{ids?: [id]} → [photo.inspect result] for these photos, or every photo in the library when ids is absent", always, |s, p| {
+            let ids: Vec<PhotoId> = match p.get("ids").and_then(Value::as_array) {
+                Some(a) => a.iter().filter_map(Value::as_u64).map(PhotoId).collect(),
+                None => s.catalog.photos().map(|ph| ph.id).collect(),
+            };
+            Ok(Value::Array(ids.into_iter().filter_map(|id| inspect(s, id)).collect()))
         }),
         cmd!(query "develop.get", "Get Develop Settings", [], None, "{id?} → the photo's develop settings; `process` is the rendering process they are interpreted by (see develop.updateProcess)", always, |s, p| {
             let id = photo_arg(s, p, "develop.get")?;
