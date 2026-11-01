@@ -67,7 +67,8 @@ jobs:
 
       - name: Report upstream history rewrite
         if: steps.cmp.outputs.rewrite == 'true'
-        env: { GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}" }
+        # GH_REPO: gh would otherwise pick the "upstream" remote (storytold) as the base repository.
+        env: { GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}", GH_REPO: "${{ github.repository }}" }
         run: |
           gh issue create --title "Upstream history rewrite detected" --label upstream-history-rewrite \
             --body "last_integrated ${{ steps.cmp.outputs.last }} is not an ancestor of upstream ${{ steps.cmp.outputs.new }}. No changes were made."
@@ -115,7 +116,8 @@ jobs:
 
       - name: Open or update the integration PR
         if: steps.cmp.outputs.changed == 'true'
-        env: { GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}" }
+        # GH_REPO: gh would otherwise pick the "upstream" remote (storytold) as the base repository.
+        env: { GH_TOKEN: "${{ steps.app-token.outputs.token || github.token }}", GH_REPO: "${{ github.repository }}" }
         run: |
           [ -f conflicts.txt ] && { echo; echo "### Conflicts (resolve locally, then push to this branch)"; sed 's/^/- /' conflicts.txt; } >> sync-report.md
           if gh pr view integration/upstream --json number >/dev/null 2>&1; then
