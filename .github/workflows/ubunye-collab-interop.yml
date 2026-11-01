@@ -78,7 +78,7 @@ jobs:
       matrix:
         kind: [deb, rpm]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download the packages
         run: |
           get() { # <app> <run id>
@@ -114,7 +114,7 @@ jobs:
     needs: find
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download the installers
         shell: bash
         run: |
@@ -146,7 +146,7 @@ jobs:
     needs: find
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download the disk images
         run: |
           get() {

@@ -46,8 +46,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
           ref: ${{ env.KOPANO_REF }}
@@ -95,7 +95,7 @@ jobs:
       - name: Install and uninstall the MSI for real
         shell: pwsh
         run: ./ubunye/packaging/windows/test-shared-install.ps1 (Get-ChildItem dist/release/*.msi | Select-Object -First 1).FullName
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ubunye-light-collab-windows-x64
           path: dist/release/*
@@ -107,8 +107,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
           ref: ${{ env.KOPANO_REF }}
@@ -141,7 +141,7 @@ jobs:
           echo "kopanod.version: $(cat "$app/Contents/Resources/kopanod.version")"
           codesign --verify --strict --deep --verbose=2 "$app"
           "$app/Contents/MacOS/kopanod" id --home "$RUNNER_TEMP/k" | tail -1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ubunye-light-collab-macos
           path: dist/release/*.dmg
@@ -156,8 +156,8 @@ jobs:
     env:
       NFPM_VERSION: 2.47.0
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
           ref: ${{ env.KOPANO_REF }}
@@ -209,7 +209,7 @@ jobs:
       - name: Install and remove the .rpm for real (Fedora)
         run: |
           docker run --rm -v "$PWD:/w" -w /w fedora:41 sh -c 'dnf install -y -q procps-ng >/dev/null && ./ubunye/packaging/linux/test-shared-install.sh dist/release/*.rpm'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ubunye-light-collab-linux-x86_64
           path: dist/release/*
