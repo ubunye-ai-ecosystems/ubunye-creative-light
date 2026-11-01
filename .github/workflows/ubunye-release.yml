@@ -49,7 +49,7 @@ jobs:
           START=$(date -u +%FT%TZ)
           gh workflow run ubunye-collab-packages.yml --ref "$GITHUB_REF_NAME"
           RUN=""
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             sleep 10
             RUN=$(gh run list --workflow ubunye-collab-packages.yml --event workflow_dispatch --commit "$GITHUB_SHA" \
                   --created ">=$START" --json databaseId --jq '.[0].databaseId // empty')
