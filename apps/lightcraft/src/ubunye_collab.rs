@@ -299,10 +299,11 @@ fn per_user(mine: PathBuf, home: &Path, port: u16, cfg: &(PathBuf, u16)) -> (Pat
     if let Some(entry) = &entry {
         if cfg!(target_os = "macos") {
             // another Ubunye app's kopanod is as good when it is there and at least as new
-            if let Some(theirs) = plist_program(entry).filter(|p| p.is_file()) {
-                if entry_points_at(entry, &theirs, home, port) && bundled_version(&theirs) >= bundled_version(&mine) {
-                    return (theirs, AtSignIn::PerUser);
-                }
+            if let Some(theirs) = plist_program(entry).filter(|p| p.is_file())
+                && entry_points_at(entry, &theirs, home, port)
+                && bundled_version(&theirs) >= bundled_version(&mine)
+            {
+                return (theirs, AtSignIn::PerUser);
             }
         } else if entry_points_at(entry, &mine, home, port) {
             return (mine, AtSignIn::PerUser);
