@@ -88,7 +88,7 @@ fn lossy_source(raw: &RawImage, long_edge: Option<u32>) -> Result<RawImage> {
 
 /// Software tag of the DNGs this writer makes. A bare "LightCraft" marks older files, whose CFAPattern is anchored at
 /// the sensor origin instead of the ActiveArea (the reader keeps their original reading).
-pub const SOFTWARE: &str = "Ubunye Light DNG 2";
+pub const SOFTWARE: &str = "LightCraft DNG 2";
 
 /// zlib level of Deflate tiles. On a 67 MP focus-stack merge (half floats) level 6 took 7× as long as level 1
 /// (3.9 s vs 0.55 s on 4 cores) to save 3 % of the file (266 vs 275 MB); 5–12 % on raw and rendered DNGs.

@@ -107,9 +107,6 @@ crates/mcp/src/backend.rs
 crates/mcp/src/server.rs
 crates/mcp/src/tools.rs
 crates/preview/src/disk.rs
-crates/raw/src/dngwrite.rs
-crates/raw/tests/it/cr3_corpus.rs
-crates/raw/tests/it/dng.rs
 crates/segment/src/lib.rs
 crates/ui-egui/locales/cs.json
 crates/ui-egui/locales/cs-formats.json

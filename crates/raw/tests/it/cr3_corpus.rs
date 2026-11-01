@@ -91,7 +91,7 @@ fn canon_r8_craw_sensor_is_exact() {
 /// low-ISO C-RAW files need no QP-map escape (most of the camera's files do; that is covered by the unit
 /// tests in `crx.rs`, see docs/cr3.md). The developed images match the camera's own previews.
 fn check_r5m2(name: &str, hash: u64, sensor: (usize, usize), developed: Option<(usize, usize)>) {
-    check_against(name, hash, sensor, developed, "the pinned Ubunye Light decode");
+    check_against(name, hash, sensor, developed, "the pinned LightCraft decode");
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn canon_cr3_bodies_decode_like_the_camera_jpeg() {
             eprintln!("skip: {} absent", path.display());
             continue;
         };
-        check_against(name, hash, sensor, None, "the pinned Ubunye Light decode");
+        check_against(name, hash, sensor, None, "the pinned LightCraft decode");
         let raw = decode(&bytes).unwrap();
         let jpeg = lightcraft_raw::embedded_preview(&bytes).unwrap_or_else(|| panic!("{name}: no camera JPEG"));
         let r = green_vs_camera_jpeg(&raw, &jpeg, 24, 16);

@@ -211,20 +211,20 @@ verify_dmg_app() {
     return 1
   fi
   echo "==> strict codesign of LightCraft.app in finished DMG"
-  codesign --verify --deep --strict --verbose=2 "$mount/LightCraft.app" || rc=1
+  codesign --verify --deep --strict --verbose=2 "$mount/Ubunye Light.app" || rc=1
   if [[ "$rc" = 0 ]]; then
-    ditto "$mount/LightCraft.app" "$copy/LightCraft.app" || rc=1
+    ditto "$mount/Ubunye Light.app" "$copy/Ubunye Light.app" || rc=1
   fi
   if [[ "$rc" = 0 ]]; then
     echo "==> strict codesign of LightCraft.app after ditto install-copy"
-    codesign --verify --deep --strict --verbose=2 "$copy/LightCraft.app" || rc=1
+    codesign --verify --deep --strict --verbose=2 "$copy/Ubunye Light.app" || rc=1
   fi
   if [[ "$rc" = 0 ]] && [[ "$NOTARIZE" = 1 ]]; then
-    spctl --assess --type execute -vvv "$copy/LightCraft.app" || rc=1
+    spctl --assess --type execute -vvv "$copy/Ubunye Light.app" || rc=1
   fi
   if [[ "$rc" != 0 ]]; then
     echo "error: published-image app verification failed; reject $DMG" >&2
-    xattr -lr "$mount/LightCraft.app" >&2 || true
+    xattr -lr "$mount/Ubunye Light.app" >&2 || true
   fi
   if ! hdiutil_retry detach "$mount" >/dev/null; then
     echo "error: could not detach verification mount" >&2

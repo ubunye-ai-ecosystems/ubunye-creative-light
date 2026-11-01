@@ -245,10 +245,10 @@ mod config_tests {
     #[test]
     fn config_unset_override_keeps_platform_defaults() {
         let vars = [("HOME", "/user"), ("APPDATA", "/roaming"), ("XDG_CONFIG_HOME", "/xdg")];
-        assert_eq!(resolve(Platform::Mac, &vars), Some(PathBuf::from("/user/Library/Application Support/Ubunye Light")));
-        assert_eq!(resolve(Platform::Windows, &vars), Some(PathBuf::from("/roaming/Ubunye Light")));
-        assert_eq!(resolve(Platform::Other, &vars), Some(PathBuf::from("/xdg/lightcraft")));
-        assert_eq!(resolve(Platform::Other, &[("HOME", "/user")]), Some(PathBuf::from("/user/.config/lightcraft")));
+        assert_eq!(resolve(Platform::Mac, &vars), Some(PathBuf::from("/user/Library/Application Support").join(crate::brand::APP_ID)));
+        assert_eq!(resolve(Platform::Windows, &vars), Some(PathBuf::from("/roaming").join(crate::brand::APP_ID)));
+        assert_eq!(resolve(Platform::Other, &vars), Some(PathBuf::from("/xdg").join(crate::brand::APP_ID)));
+        assert_eq!(resolve(Platform::Other, &[("HOME", "/user")]), Some(PathBuf::from("/user/.config").join(crate::brand::APP_ID)));
         for platform in [Platform::Mac, Platform::Windows, Platform::Other] {
             assert_eq!(resolve(platform, &[]), None);
         }

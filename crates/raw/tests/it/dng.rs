@@ -109,10 +109,10 @@ fn writer_camera_identity_tags_roundtrip() {
         (Some("Eastman Kodak"), Some("Eastman DCS Pro"), "Eastman Kodak Eastman DCS Pro"),
         (Some(""), Some("EOS R6"), "EOS R6"),
         (Some("Canon"), Some(""), "Canon"),
-        (Some(""), Some(""), "Ubunye Light"),
+        (Some(""), Some(""), "LightCraft"),
         (None, Some("EOS R6"), "EOS R6"),
         (Some("Canon"), None, "Canon"),
-        (None, None, "Ubunye Light"),
+        (None, None, "LightCraft"),
     ];
     for (make, model, unique) in cases {
         let mut raw = synthetic(16, 16, Some(Cfa::bayer("RGGB").unwrap()), 1);
@@ -1127,7 +1127,7 @@ fn legacy_lightcraft_dng_keeps_the_sensor_anchored_pattern() {
         raw.set(t::SOFTWARE, Value::Ascii(software.into()));
         decode(&dng(raw, ByteOrder::Little)).unwrap()
     };
-    assert_eq!(build("Ubunye Light").cfa.unwrap().name(), "GRBG");
+    assert_eq!(build("LightCraft").cfa.unwrap().name(), "GRBG");
     assert_eq!(build("Adobe Photoshop Lightroom").cfa.unwrap().name(), "BGGR");
-    assert_ne!(lightcraft_raw::dngwrite::SOFTWARE, "Ubunye Light");
+    assert_ne!(lightcraft_raw::dngwrite::SOFTWARE, "LightCraft");
 }

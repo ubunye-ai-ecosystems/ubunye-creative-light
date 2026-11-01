@@ -244,6 +244,11 @@ RULES: list[tuple[str, str, str]] = [
      '.join("Library/Application Support").join(crate::brand::APP_ID))'),
     ("crates/engine/src/config.rs", 'PathBuf::from(a).join("LightCraft"))', "PathBuf::from(a).join(crate::brand::APP_ID))"),
     ("crates/engine/src/config.rs", '.map(|c| c.join("lightcraft"))', ".map(|c| c.join(crate::brand::APP_ID))"),
+    ("crates/engine/src/config.rs", 'Some(PathBuf::from("/user/Library/Application Support/LightCraft"))',
+     'Some(PathBuf::from("/user/Library/Application Support").join(crate::brand::APP_ID))'),
+    ("crates/engine/src/config.rs", 'Some(PathBuf::from("/roaming/LightCraft"))', 'Some(PathBuf::from("/roaming").join(crate::brand::APP_ID))'),
+    ("crates/engine/src/config.rs", 'Some(PathBuf::from("/xdg/lightcraft"))', 'Some(PathBuf::from("/xdg").join(crate::brand::APP_ID))'),
+    ("crates/engine/src/config.rs", 'Some(PathBuf::from("/user/.config/lightcraft"))', 'Some(PathBuf::from("/user/.config").join(crate::brand::APP_ID))'),
     ("apps/lightcraft-cli/tests/it/cli.rs", 'let app_config = config.join("lightcraft");',
      f"let app_config = config.join({B}::APP_ID);"),
     # desktop app: app id, --version, --help
@@ -318,6 +323,9 @@ RULES: list[tuple[str, str, str]] = [
     ("packaging/macos/package.sh", 'APP="$WORK/LightCraft.app"', f'APP="$WORK/{NAME}.app"'),
     ("packaging/macos/package.sh", 'ditto "$APP" "$STAGE/LightCraft.app"', f'ditto "$APP" "$STAGE/{NAME}.app"'),
     ("packaging/macos/package.sh", '-volname "LightCraft"', f'-volname "{NAME}"'),
+    # the finished-DMG checks (upstream 0.16) open the bundle by name
+    ("packaging/macos/package.sh", '"$mount/LightCraft.app"', f'"$mount/{NAME}.app"'),
+    ("packaging/macos/package.sh", '"$copy/LightCraft.app"', f'"$copy/{NAME}.app"'),
     # packaging: Windows install policy (upstream 0.16). New copies go under a suite folder named
     # after the vendor (upstream: ArtCraft); the remembered-folder key is the one 0.6.0 wrote.
     ("packaging/windows/install-policy.wxi", 'Key="Software\\LightCraft"', f'Key="{WIN_KEY}"'),
@@ -325,6 +333,11 @@ RULES: list[tuple[str, str, str]] = [
     ("packaging/windows/install-policy.json", '"upgradeCode": "229BB552-5EFD-479A-BA86-8CB6D926390C"', f'"upgradeCode": "{UPGRADE_CODE}"'),
     ("packaging/windows/install-policy.json", '"Software\\\\LightCraft"', json.dumps(WIN_KEY)),
     ("packaging/windows/check-install-policy.ps1", '"Software\\$($policy.name)"', '"Software\\' + VENDOR + '\\$($policy.name)"'),
+    # A folder name with spaces is stored as "SHORT~1|Long Name" in the Directory table: compare the long one.
+    ("packaging/windows/check-install-policy.ps1", "$dirs['CraftSuiteFolder'][1] -ne 'ArtCraft'",
+     "($dirs['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '" + WIN_SUITE_FOLDER + "'"),
+    ("packaging/windows/check-install-policy.ps1", "$directories['CraftSuiteFolder'][1] -ne 'ArtCraft'",
+     "($directories['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '" + WIN_SUITE_FOLDER + "'"),
     ("packaging/windows/test-install-folder.ps1", "Set-TestValue 'Software\\LightCraft' 'InstallFolder'",
      f"Set-TestValue '{WIN_KEY}' 'InstallFolder'"),
     (".github/workflows/windows-arm64.yml", "install-relative-path: Programs/ArtCraft/LightCraft",
@@ -410,6 +423,9 @@ KEEP_LINE = [re.compile(p) for p in (
 )]
 
 RUST_ROOTS = ("apps/", "crates/")
+# Rust code that writes the identity into users' files (DNG Software, UniqueCameraModel) and reads it back
+# to recognise its own older files: the name stays upstream's there, like the KEEP_LINE metadata.
+RUST_KEEP_PREFIXES = ("crates/raw/",)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -824,7 +840,7 @@ def apply_rust_and_catalogs(ch: Changes, files: list[str]) -> None:
     for rel in files:
         if allowed(rel):
             continue
-        if rel.endswith(".rs") and rel.startswith(RUST_ROOTS):
+        if rel.endswith(".rs") and rel.startswith(RUST_ROOTS) and not rel.startswith(RUST_KEEP_PREFIXES):
             text = ch.get(rel)
             if text and ("LightCraft" in text or "ArtCraft" in text):
                 new, _ = rebrand_rust(text)
@@ -870,7 +886,7 @@ def leak_scan(ch: Changes, files: list[str]) -> None:
                 ch.problems.append(f"{rel}:{no}: upstream identity or link: {line.strip()[:100]}")
             elif "ArtCraft" in line and not ARTCRAFT_OK.search(line):
                 ch.problems.append(f"{rel}:{no}: ArtCraft outside the credit: {line.strip()[:100]}")
-        if rel.endswith(".rs") and rel.startswith(RUST_ROOTS):
+        if rel.endswith(".rs") and rel.startswith(RUST_ROOTS) and not rel.startswith(RUST_KEEP_PREFIXES):
             for lit in rust_leaks(text):
                 ch.problems.append(f"{rel}: user-visible LightCraft string: {lit!r}")
         elif rel.startswith("crates/ui-egui/locales/") and rel.endswith(".json"):
