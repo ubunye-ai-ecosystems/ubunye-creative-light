@@ -1,6 +1,6 @@
 //! LightCraft in the browser: the same egui UI as the desktop app, compiled to WASM.
 //!
-//! Build with `cargo xtask web` (→ `target/web/`), then serve that folder over HTTP (see
+//! Build with `cargo xtask web` (→ `target/web-site/`), then serve that folder over HTTP (see
 //! `docs/web.md`). Differences from the desktop host:
 //! - the library lives in browser storage (OPFS, or IndexedDB where OPFS can't be written from the
 //!   main thread): catalog journal, presets, view state and prefs are mirrored in memory and
@@ -16,8 +16,13 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod automation;
 pub mod backup;
 pub mod bench;
+// The web host's drop gate, also compiled natively so its queue handling has tests (the module is
+// unused in a native, non-test library build and would otherwise be dead code there).
+#[cfg(any(test, target_arch = "wasm32"))]
+mod drop_gate;
 pub mod files;
 pub mod store;
 pub mod wire;

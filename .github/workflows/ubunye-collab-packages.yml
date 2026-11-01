@@ -18,7 +18,7 @@ on:
         type: string
         default: f5ff0bfd03cfedf945f9e27869b0814bb7c93cf4
   push:
-    branches: [feature/kopano-installers]
+    branches: [develop, feature/kopano-installers, "sync/**"]
     paths:
       - ubunye/packaging/**
       - packaging/**

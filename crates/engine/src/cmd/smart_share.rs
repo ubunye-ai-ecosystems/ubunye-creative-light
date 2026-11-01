@@ -202,7 +202,8 @@ fn proxy_bytes(s: &mut Session, ph: &Photo) -> std::result::Result<Vec<u8>, Stri
 
     if original {
         let src = s.media.origin_ref(&ph.source, crate::media::SourceLevel::Preview.max_edge()).load_source()?;
-        let bytes = crate::smart::encode(&src.image, src.info_or(Default::default()).camera_tone.as_ref())?;
+        let info = src.info_or(Default::default());
+        let bytes = crate::smart::encode(&src.image, Some(&info))?;
         // kept in the library too, as Build Smart Previews would (a failure here is not the export's)
         if let Some(p) = &stored
             && let Some(dir) = p.parent()
@@ -264,7 +265,7 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let bytes = std::fs::read(&sp).map_err(|e| bad(C, format!("{}: {e}", sp.display())))?;
     let (head, _) = split(&bytes).map_err(|e| bad(C, e))?;
     // the pixels must decode before anything is added
-    let (proxy, _) = crate::smart::decode(&bytes).map_err(|e| bad(C, e))?;
+    let (proxy, _, _) = crate::smart::decode(&bytes).map_err(|e| bad(C, e))?;
     let f = head.get("photo").cloned().unwrap_or_else(|| json!({}));
     let text = |k: &str| str_param(p, k).or_else(|| str_param(&f, k)).map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let num = |k: &str| p.get(k).and_then(Value::as_u64).or_else(|| f.get(k).and_then(Value::as_u64));

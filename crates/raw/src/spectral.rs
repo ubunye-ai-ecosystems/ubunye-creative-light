@@ -4,11 +4,12 @@
 //! `tools/spectral_camera_table.py` from rawtoaces-data (Academy Software Foundation, Apache-2.0): per model, DNG
 //! `ColorMatrix1/2` and `ForwardMatrix1/2` for Standard Illuminant A and D65, fitted to the camera's measured spectral
 //! sensitivities. [`Camera::fill`] writes them into a file's [`ColorData`], and [`crate::color`]'s DNG model does the
-//! rest. Other names of a covered camera (Rebel T3i for EOS 600D) come from rawtoaces-data's alias list. No number
+//! rest. Other names of a covered camera (Rebel T3i for EOS 600D) come from rawtoaces-data's alias list, and other
+//! bodies built on a covered camera's sensor from [`SAME_SENSOR`]. No number
 //! comes from Adobe or from a GPL raw decoder. Which colour a raw starts from is the engine's choice
 //! (`docs/camera-preview-colour.md`).
 use crate::ColorData;
-use lightcraft_color::Mat3;
+use lightcraft_color::{Mat3, Xy};
 
 #[path = "spectral_table.rs"]
 mod table;
@@ -40,6 +41,21 @@ impl Camera {
     }
 }
 
+/// `(make, model as sold, table model)`: bodies sharing a table camera's sensor that rawtoaces-data's alias list
+/// doesn't name, kept here because the table is generated. Fujifilm's 26.1 MP X-Trans CMOS 4 bodies use the X-T3's
+/// or X-T4's sensor (X-T30 issue: a black-and-white Acros camera JPEG gives no colour to fit, and without matrices the photo
+/// opened in the muted neutral fallback).
+const SAME_SENSOR: &[(&str, &str, &str)] = &[
+    ("Fujifilm", "X-T30", "X-T3"),
+    ("Fujifilm", "X-T30 II", "X-T3"),
+    ("Fujifilm", "X-Pro3", "X-T3"),
+    ("Fujifilm", "X100V", "X-T3"),
+    ("Fujifilm", "X-S10", "X-T4"),
+    ("Fujifilm", "X-E4", "X-T3"),
+    ("Fujifilm", "X-S20", "X-T4"),
+    ("Fujifilm", "X-M5", "X-T3"),
+];
+
 /// Model names compared without case, the brand, a leading `EOS` or a trailing `DIGITAL`
 /// (Exif "Canon EOS 400D DIGITAL" is the table's "EOS 400D").
 fn key(brand: &str, model: &str) -> String {
@@ -70,10 +86,38 @@ pub fn find(make: Option<&str>, model: &str) -> Option<&'static Camera> {
         let wanted = key(&row_brand, model);
         make.as_ref().is_none_or(|m| *m == row_brand) && !wanted.is_empty() && key(&row_brand, row_model) == wanted
     };
-    match table::ALIASES.iter().find(|(m, alias, _)| same(m, alias)) {
+    match table::ALIASES.iter().chain(SAME_SENSOR).find(|(m, alias, _)| same(m, alias)) {
         Some((m, _, target)) => table::CAMERAS.iter().find(|c| brand(c.make) == brand(m) && c.model == *target),
         None => table::CAMERAS.iter().find(|c| same(c.make, c.model)),
     }
+}
+
+/// [`find`] for a camera written as one string, Exif make and model joined by a space (the catalog keeps
+/// `"SONY ILCE-7M3"`, `"NIKON CORPORATION NIKON D850"`): every split into make and model is tried, then the
+/// whole string as a model alone. Returns the same row as `find(Some(make), model)` for the parts it was
+/// made of, so the catalog and the decoder agree on which cameras have matrices.
+pub fn find_camera(camera: &str) -> Option<&'static Camera> {
+    let words: Vec<&str> = camera.split_whitespace().collect();
+    if words.is_empty() {
+        return None;
+    }
+    (1..words.len()).find_map(|i| find(Some(&words[..i].join(" ")), &words[i..].join(" "))).or_else(|| find(None, camera))
+}
+
+/// The as-shot white of a file through `camera`'s matrices instead of the file's own colour tags: the DNG
+/// reading of its `AsShotNeutral` or vendor white-balance multipliers (`None` when it has neither, so the
+/// white is unknown). What the catalog shows as the As Shot temperature of a raw whose colour model is a
+/// JPEG fit: the matrices only convert between multipliers and Kelvin here.
+pub fn as_shot_white_through(camera: &Camera, color: &ColorData, wb_multipliers: Option<[f32; 3]>) -> Option<Xy> {
+    if color.as_shot_white_xy.is_none()
+        && color.as_shot_neutral.is_none()
+        && wb_multipliers.is_none_or(|m| m.iter().any(|v| !(*v > 0.0 && v.is_finite())))
+    {
+        return None;
+    }
+    let mut c = ColorData { profile: Default::default(), ..color.clone() };
+    camera.fill(&mut c);
+    Some(crate::color::as_shot_white_of(&c, wb_multipliers))
 }
 
 /// Every camera in the table.
@@ -114,10 +158,15 @@ mod tests {
             ("Canon", "Canon EOS REBEL T3i", "EOS 600D"),
             ("Canon", "Canon EOS Kiss X5", "EOS 600D"),
             ("Canon", "Canon EOS R5 Mark II", "EOS R5m2"),
+            ("Canon", "Canon EOS R6 Mark II", "EOS R6m2"),
             ("NIKON CORPORATION", "NIKON D800", "D800E"),
             ("NIKON CORPORATION", "NIKON Z 6_2", "Z f"),
             ("SONY", "ILCE-7RM4A", "ILCE-7RM4"),
             ("FUJIFILM", "GFX100S", "GFX 100"),
+            ("FUJIFILM", "X-T30", "X-T3"),
+            ("FUJIFILM", "X-T30 II", "X-T3"),
+            ("FUJIFILM", "X100V", "X-T3"),
+            ("FUJIFILM", "X-S20", "X-T4"),
         ] {
             assert_eq!(find(Some(make), model).map(|c| c.model), Some(row), "{make} {model}");
         }
@@ -133,6 +182,60 @@ mod tests {
         assert_eq!(find(Some("SONY"), "X-T4"), None);
         assert_eq!(find(None, ""), None);
         assert_eq!(find(Some(""), ""), None);
+    }
+
+    #[test]
+    fn a_make_model_string_finds_what_its_parts_find() {
+        // every row and alias, joined the way the catalog keeps a camera ("Make Model")
+        for c in cameras() {
+            let joined = format!("{} {}", c.make, c.model);
+            assert_eq!(find_camera(&joined), Some(c), "{joined}");
+            assert_eq!(find_camera(&joined), find(Some(c.make), c.model), "{joined}");
+        }
+        for (make, alias, _) in table::ALIASES.iter().chain(SAME_SENSOR) {
+            let joined = format!("{make} {alias}");
+            assert_eq!(find_camera(&joined), find(Some(make), alias), "{joined}");
+            assert!(find_camera(&joined).is_some(), "{joined}");
+        }
+        // Exif makes with more words than the brand, and a model that repeats the brand
+        for (make, model, row) in [
+            ("NIKON CORPORATION", "NIKON D850", "D850"),
+            ("NIKON CORPORATION", "NIKON Z 6_2", "Z f"),
+            ("SONY", "ILCE-7M3", "ILCE-7M3"),
+            ("Canon", "Canon EOS 5D Mark III", "EOS 5D Mark III"),
+            ("Canon", "Canon EOS 400D DIGITAL", "Digital Rebel XTi"),
+            ("FUJIFILM", "GFX100S", "GFX 100"),
+            ("Panasonic", "DC-GX9", "DC-GX9"),
+        ] {
+            let joined = format!("{make} {model}");
+            assert_eq!(find_camera(&joined).map(|c| c.model), Some(row), "{joined}");
+            assert_eq!(find_camera(&joined), find(Some(make), model), "{joined}");
+        }
+        // a model alone, as a Lightroom catalog names it
+        assert_eq!(find_camera("ILCE-7M3").map(|c| c.model), Some("ILCE-7M3"));
+        assert_eq!(find_camera("  ILCE-7M3  ").map(|c| c.model), Some("ILCE-7M3"));
+        for none in ["", "   ", "SONY", "SONY ILCE-7M2", "Canon EOS 7D", "D850 SONY", "OLYMPUS IMAGING CORP. E-M5"] {
+            assert_eq!(find_camera(none), None, "{none:?}");
+        }
+    }
+
+    #[test]
+    fn as_shot_white_through_the_matrices_reads_the_multipliers() {
+        let c = find(Some("SONY"), "ILCE-7M3").unwrap();
+        let color = ColorData::default();
+        // daylight-ish Sony multipliers: a white near the locus around 5000 K, not the generic model's wild tint
+        let xy = as_shot_white_through(c, &color, Some([2.2, 1.0, 1.6])).unwrap();
+        let (t, tint) = lightcraft_color::cct::xy_to_temp_tint(xy);
+        assert!((3500.0..7000.0).contains(&t) && tint.abs() < 30.0, "{t} {tint}");
+        // the file's own tags are left alone
+        assert_eq!(color, ColorData::default());
+        // unknown white: no multipliers, or unusable ones
+        assert_eq!(as_shot_white_through(c, &color, None), None);
+        assert_eq!(as_shot_white_through(c, &color, Some([0.0, 1.0, 1.0])), None);
+        assert_eq!(as_shot_white_through(c, &color, Some([f32::NAN, 1.0, 1.0])), None);
+        // a neutral in the tags counts as known
+        let tagged = ColorData { as_shot_neutral: Some([0.5, 1.0, 0.6]), ..Default::default() };
+        assert!(as_shot_white_through(c, &tagged, None).is_some());
     }
 
     #[test]

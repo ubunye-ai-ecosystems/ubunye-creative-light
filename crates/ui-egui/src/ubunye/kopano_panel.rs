@@ -352,8 +352,8 @@ pub fn paint_icon(p: &egui::Painter, r: Rect, color: Color32) {
 /// The toolbar button (top bar, right): opens or closes the window.
 pub fn toolbar_button(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
     let t = Tokens::get(ui.ctx());
-    let resp = ui.interact(r, egui::Id::new(("top", "collaborate")), Sense::click()).on_hover_text(crate::i18n::tr(TITLE));
-    register(ui.ctx(), "icon:collaborate", r);
+    let resp = ui.interact(r, egui::Id::unique(("top", "collaborate")), Sense::click()).on_hover_text(crate::i18n::tr(TITLE));
+    register(ui, "icon:collaborate", r);
     let color = if resp.hovered() || app.kopano.open { t.text } else { t.icon };
     paint_icon(ui.painter(), r.shrink(5.0), color);
     if resp.clicked() {
@@ -600,7 +600,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     // left of the right-hand panels, so the Edit sliders stay in view
     let x = (screen.right() - Tokens::get(ctx).panel_w - 400.0).max(screen.left() + 8.0);
     let shown = egui::Window::new(crate::i18n::tr(TITLE))
-        .id(egui::Id::new("kopano-panel"))
+        .id(egui::Id::unique("kopano-panel"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -612,7 +612,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             body(app, ui, &state);
         });
     if let Some(r) = shown {
-        register(ctx, "region:collaborate", r.response.rect);
+        crate::widgets::register_geometry(ctx, "region:collaborate", r.response.rect);
     }
     if !open {
         app.kopano.open = false;
@@ -765,7 +765,7 @@ fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, state: &State) {
         .id_salt("kopano-advanced")
         .open(Some(app.kopano.advanced))
         .show(ui, |ui| advanced(app, ui, state, &ctx));
-    register(&ctx, "button:kopano-advanced", header.header_response.rect);
+    crate::widgets::register_response("button:kopano-advanced", header.header_response.rect, &header.header_response);
     if header.header_response.clicked() {
         app.kopano.advanced = !app.kopano.advanced;
     }

@@ -226,9 +226,10 @@ impl Cr3<'_> {
 }
 
 const CANON_UUID: [u8; 16] = [0x85, 0xc0, 0xb6, 0x87, 0x82, 0x0f, 0x11, 0xe0, 0x81, 0x11, 0xf4, 0xce, 0x46, 0x2b, 0x6a, 0x48];
-const XMP_UUID: [u8; 16] = [0xbe, 0x7a, 0xcf, 0xcb, 0x97, 0xa9, 0x42, 0xe8, 0x9c, 0x71, 0x99, 0x94, 0x91, 0xe3, 0xaf, 0xac];
+/// The `uuid` of the top-level box holding the XMP packet.
+pub const XMP_UUID: [u8; 16] = [0xbe, 0x7a, 0xcf, 0xcb, 0x97, 0xa9, 0x42, 0xe8, 0x9c, 0x71, 0x99, 0x94, 0x91, 0xe3, 0xaf, 0xac];
 const MAX_DEPTH: usize = 12;
-const MAX_BOXES: usize = 4096;
+pub(crate) const MAX_BOXES: usize = 4096;
 /// A `VisualSampleEntry` (78 bytes after the box header) plus 4 bytes Canon adds before the child boxes.
 const CRAW_CHILDREN_AT: usize = 82;
 
@@ -237,7 +238,8 @@ pub fn is_cr3(bytes: &[u8]) -> bool {
     bytes.get(4..12) == Some(b"ftypcrx ".as_slice())
 }
 
-/// Parse a CR3 file's boxes; `None` when it is not a CR3 file.
+/// Parse a CR3 file's boxes; `None` when it is not a CR3 file. Of the top-level boxes only `moov`
+/// and the XMP `uuid` are read (`lightcraft_raw::sparse` relies on it to skip the others).
 pub fn parse_cr3(bytes: &[u8]) -> Option<Cr3<'_>> {
     if !is_cr3(bytes) {
         return None;
@@ -254,16 +256,16 @@ pub fn parse_cr3(bytes: &[u8]) -> Option<Cr3<'_>> {
     Some(out)
 }
 
-struct BoxRef {
-    kind: [u8; 4],
+pub(crate) struct BoxRef {
+    pub(crate) kind: [u8; 4],
     /// Start of the payload (after the header and, for `uuid`, the 16-byte uuid).
-    body: usize,
-    end: usize,
-    uuid: Option<[u8; 16]>,
+    pub(crate) body: usize,
+    pub(crate) end: usize,
+    pub(crate) uuid: Option<[u8; 16]>,
 }
 
 /// The boxes directly inside `[from, to)`; stops at the first malformed header.
-fn boxes(bytes: &[u8], from: usize, to: usize, budget: &mut usize) -> Vec<BoxRef> {
+pub(crate) fn boxes(bytes: &[u8], from: usize, to: usize, budget: &mut usize) -> Vec<BoxRef> {
     let mut out = Vec::new();
     let mut at = from;
     let to = to.min(bytes.len());
@@ -405,13 +407,16 @@ fn sample_entry(bytes: &[u8], e: &BoxRef, budget: &mut usize) -> Cr3TrackKind {
     Cr3TrackKind::Raw { width, height, cmp1, iad1 }
 }
 
-fn be16(b: &[u8], at: usize) -> Option<u16> {
+/// A big-endian `u16` at `at`, or `None` when the buffer is shorter than that.
+pub(crate) fn be16(b: &[u8], at: usize) -> Option<u16> {
     b.get(at..at.checked_add(2)?).map(|s| u16::from_be_bytes([s[0], s[1]]))
 }
-fn be32(b: &[u8], at: usize) -> Option<u32> {
+/// A big-endian `u32` at `at`, or `None` when the buffer is shorter than that.
+pub(crate) fn be32(b: &[u8], at: usize) -> Option<u32> {
     b.get(at..at.checked_add(4)?).map(|s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
 }
-fn be64(b: &[u8], at: usize) -> Option<u64> {
+/// A big-endian `u64` at `at`, or `None` when the buffer is shorter than that.
+pub(crate) fn be64(b: &[u8], at: usize) -> Option<u64> {
     let s = b.get(at..at.checked_add(8)?)?;
     let mut a = [0u8; 8];
     a.copy_from_slice(s);
