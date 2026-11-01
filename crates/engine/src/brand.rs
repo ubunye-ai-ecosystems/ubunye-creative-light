@@ -26,6 +26,8 @@ pub const HOMEPAGE: &str = "https://www.thabangvision.com/tools/light";
 pub const SUITE_URL: &str = "https://www.thabangvision.com/tools";
 /// Source repository.
 pub const SOURCE: &str = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light";
+/// Download page (stable channel): where updates come from.
+pub const DOWNLOADS: &str = "https://downloads.thabangvision.com/light/stable/";
 /// Issue tracker.
 pub const ISSUES: &str = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues";
 /// Plain-text upstream credit (no ArtCraft marks).

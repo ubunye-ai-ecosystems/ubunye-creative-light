@@ -149,6 +149,7 @@ crates/ui-egui/src/dialogs.rs
 crates/ui-egui/src/dialogs/faces.rs
 crates/ui-egui/src/dialogs/lightroom_destination.rs
 crates/ui-egui/src/dialogs/sam_model.rs
+crates/ui-egui/src/dialogs/settings/general.rs
 crates/ui-egui/src/dialogs/settings/import.rs
 crates/ui-egui/src/dialogs/updates_ui.rs
 crates/ui-egui/src/export_task.rs
@@ -162,6 +163,7 @@ crates/ui-egui/src/links.rs
 crates/ui-egui/src/menus/run.rs
 crates/ui-egui/src/menus/ui_commands.rs
 crates/ui-egui/src/panels/denoise.rs
+crates/ui-egui/src/panels/grid.rs
 crates/ui-egui/src/panels/library_problem.rs
 crates/ui-egui/src/panels/notices.rs
 crates/ui-egui/src/panels/second.rs

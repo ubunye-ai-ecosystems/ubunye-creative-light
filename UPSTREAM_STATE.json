@@ -15,9 +15,9 @@
     "upstream_tag": "v0.16.0",
     "upstream_describe": "v0.16.0-641-g07301cbd",
     "method": "merge",
-    "merged_pr": null,
-    "merged_by": null,
-    "merged_at": null
+    "merged_pr": 9,
+    "merged_by": "LeparaLaMapara",
+    "merged_at": "2026-11-01T13:52:53Z"
   },
   "pending": null,
   "history": [
@@ -35,9 +35,11 @@
       "commits": 3248,
       "conflicts": 61,
       "conflict_hunks": 121,
-      "ci": "pending",
+      "ci": "green: ubunye-ci 41307909779 and ubunye-panel-tests 41307903118 on a127e397; ubunye-collab-packages 41301982330 on eb0ed803; develop df67e43b: ubunye-ci 41313415264, collab-packages 41313761099",
       "recorded_at": "2026-11-01T12:00:00Z",
-      "note": "branch sync/upstream-v0.16; 44 brand-only conflicts taken from upstream and re-branded by ubunye/brand/apply.py, 17 with Ubunye changes re-applied by hand"
+      "note": "branch sync/upstream-v0.16; 44 brand-only conflicts taken from upstream and re-branded by ubunye/brand/apply.py, 17 with Ubunye changes re-applied by hand",
+      "merged_pr": 9,
+      "merge_commit": "df67e43bf306685e831a489713a5527173143619"
     }
   ]
 }

@@ -69,6 +69,7 @@ WIN_SUITE_FOLDER = VENDOR
 # Sibling apps the upstream code hands photos to (Photo ▸ Edit In).
 PHOTO_APP_ID = BRAND["siblings"]["photo_app_id"]
 PHOTO_PAGE = BRAND["siblings"]["photo_page"]
+PHOTO_NAME = BRAND["siblings"]["photo_name"]
 
 # Our own component GUID for the MSI's main component (upstream's would make Windows Installer treat
 # the two products' files as one shared component). Derived, so it never changes.
@@ -213,6 +214,7 @@ def brand_rs() -> str:
         ("HOMEPAGE", HOMEPAGE, "Product page."),
         ("SUITE_URL", SUITE_URL, "Suite page."),
         ("SOURCE", SOURCE, "Source repository."),
+        ("DOWNLOADS", DOWNLOADS, "Download page (stable channel): where updates come from."),
         ("ISSUES", ISSUES, "Issue tracker."),
         ("BASED_ON", BASED_ON, "Plain-text upstream credit (no ArtCraft marks)."),
         ("UPSTREAM", UPSTREAM, "The upstream project the credit links to."),
@@ -517,19 +519,34 @@ def product_leak(text: str) -> bool:
     return bool(PRODUCT_RE.search(PROTECTED.sub("", text)))
 
 
-def rebrand_literal(content: str, line: str) -> str:
+# The sibling photo editor's name in UI text (Photo > Edit In, Settings): word-bounded, so command
+# ids (`photo.editInPhotoCraft`) and the internal sentinel `state::PHOTOCRAFT` keep upstream's name.
+SIBLING_RE = re.compile(r"(?<![A-Za-z0-9_.])PhotoCraft(?![A-Za-z0-9_])")
+SIBLING_ROOT = "crates/ui-egui/src/"
+SIBLING_KEEP = re.compile(r"pub const PHOTOCRAFT")
+
+
+def sibling_file(rel: str) -> bool:
+    """UI code where the sibling's name is shown (not tests, which drive the internal sentinel)."""
+    base = rel.rsplit("/", 1)[-1]
+    return rel.startswith(SIBLING_ROOT) and "/tests/" not in rel and not base.startswith("tests") and base != "tests.rs"
+
+
+def rebrand_literal(content: str, line: str, sibling: bool = False) -> str:
     if content in RENAMES:
         return RENAMES[content]
+    if sibling and SIBLING_RE.search(content) and not SIBLING_KEEP.search(line):
+        content = SIBLING_RE.sub(PHOTO_NAME, content)
     if "LightCraft" not in content or any(p.search(line) for p in KEEP_LINE):
         return content
     return sub_product(content)
 
 
-def rebrand_rust(text: str) -> tuple[str, list[str]]:
+def rebrand_rust(text: str, sibling: bool = False) -> tuple[str, list[str]]:
     out, last, leaks = [], 0, []
     for s, e in rust_literals(text):
         content = text[s:e]
-        new = rebrand_literal(content, line_at(text, s))
+        new = rebrand_literal(content, line_at(text, s), sibling)
         if new != content:
             out.append(text[last:s])
             out.append(new)
@@ -538,11 +555,11 @@ def rebrand_rust(text: str) -> tuple[str, list[str]]:
     return "".join(out), leaks
 
 
-def rust_leaks(text: str) -> list[str]:
+def rust_leaks(text: str, sibling: bool = False) -> list[str]:
     found = []
     for s, e in rust_literals(text):
         content = text[s:e]
-        if content in RENAMES or rebrand_literal(content, line_at(text, s)) != content:
+        if content in RENAMES or rebrand_literal(content, line_at(text, s), sibling) != content:
             found.append(content[:80])
     return found
 
@@ -576,6 +593,7 @@ def rebrand_catalog(rel: str, text: str, overlay: dict[str, dict[str, str]]) -> 
             key, value = new_key, new_value
         else:
             key, value = sub_product(key), sub_product(value, article=False)  # English keys only
+            key, value = SIBLING_RE.sub(PHOTO_NAME, key), SIBLING_RE.sub(PHOTO_NAME, value)
         enc = lambda s: json.dumps(s, ensure_ascii=False)
         lines[idx] = f"{m.group(1)}{enc(key)}{m.group(3)}{enc(value)}{m.group(5)}{m.group(6)}"
     return "\n".join(lines)
@@ -842,8 +860,9 @@ def apply_rust_and_catalogs(ch: Changes, files: list[str]) -> None:
             continue
         if rel.endswith(".rs") and rel.startswith(RUST_ROOTS) and not rel.startswith(RUST_KEEP_PREFIXES):
             text = ch.get(rel)
-            if text and ("LightCraft" in text or "ArtCraft" in text):
-                new, _ = rebrand_rust(text)
+            sib = sibling_file(rel)
+            if text and ("LightCraft" in text or "ArtCraft" in text or (sib and "PhotoCraft" in text)):
+                new, _ = rebrand_rust(text, sib)
                 if new != text:
                     ch.put(rel, new)
         elif rel.startswith("crates/ui-egui/locales/") and rel.endswith(".json"):
@@ -887,7 +906,7 @@ def leak_scan(ch: Changes, files: list[str]) -> None:
             elif "ArtCraft" in line and not ARTCRAFT_OK.search(line):
                 ch.problems.append(f"{rel}:{no}: ArtCraft outside the credit: {line.strip()[:100]}")
         if rel.endswith(".rs") and rel.startswith(RUST_ROOTS) and not rel.startswith(RUST_KEEP_PREFIXES):
-            for lit in rust_leaks(text):
+            for lit in rust_leaks(text, sibling_file(rel)):
                 ch.problems.append(f"{rel}: user-visible LightCraft string: {lit!r}")
         elif rel.startswith("crates/ui-egui/locales/") and rel.endswith(".json"):
             for no, line in enumerate(text.split("\n"), 1):

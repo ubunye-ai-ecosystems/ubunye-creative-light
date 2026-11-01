@@ -1,5 +1,6 @@
 //! Starting external editors for Photo ▸ Edit In: PhotoCraft, found where its installers put it,
 //! or any other application the user named in Settings ▸ External Editing.
+// Modified by Ubunye AI Ecosystems, 2026: the sibling editor is Ubunye Photo (`ubunye_photo` below).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,6 +9,28 @@ use std::process::Command;
 const PHOTOCRAFT: &str = lightcraft_ui_egui::state::PHOTOCRAFT;
 /// PhotoCraft's application id (Flatpak, desktop entry).
 const PHOTOCRAFT_ID: &str = "org.ubunye.creative.photo";
+
+/// Ubunye: where Ubunye Photo's installers put it (ubunye-creative-photo's packaging), then the
+/// upstream PhotoCraft names, which cost nothing to keep looking for.
+mod ubunye_photo {
+    /// macOS bundle names, in /Applications or ~/Applications.
+    pub const MAC_BUNDLES: &[&str] = &["Ubunye Photo.app", "PhotoCraft.app"];
+    /// Windows registry keys holding `InstallDir` (the MSI writes HKLM for everyone, HKCU for one user).
+    pub const WIN_KEYS: &[&str] =
+        &[r"HKLM\Software\Ubunye AI Ecosystems\Ubunye Photo", r"HKCU\Software\Ubunye AI Ecosystems\Ubunye Photo", r"HKLM\Software\PhotoCraft"];
+    /// The App Paths entries of the executable (`photocraft.exe`, the binary name Photo keeps).
+    pub const WIN_APP_PATHS: &[&str] = &[
+        r"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\photocraft.exe",
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\photocraft.exe",
+    ];
+    /// Install folders under Program Files: 0.7 (suite folder), 0.6, upstream.
+    pub const WIN_MACHINE_DIRS: &[&str] = &[r"Ubunye AI Ecosystems\Ubunye Photo", "Ubunye Photo", "PhotoCraft"];
+    /// Install folders under %LOCALAPPDATA%\Programs (per-user installs).
+    pub const WIN_USER_DIRS: &[&str] = &[r"Ubunye AI Ecosystems\Ubunye Photo", "PhotoCraft"];
+    /// Marks in the file names of its Linux program and AppImages (`photocraft`,
+    /// `ubunye-creative-photo-0.7.0-linux-x86_64.AppImage`).
+    pub const LINUX_MARKS: &[&str] = &["photocraft", "ubunye-creative-photo"];
+}
 
 /// How an editor is started.
 #[derive(Debug, PartialEq)]
@@ -120,7 +143,7 @@ fn launcher(app: &str) -> Result<Launcher, String> {
         return Ok(if cfg!(target_os = "macos") { Launcher::MacApp(app.to_string()) } else { Launcher::Program(PathBuf::from(app)) });
     }
     find_photocraft().ok_or_else(|| {
-        "PhotoCraft isn't installed. Get it from www.thabangvision.com/tools/photo, or give where it is in Settings ▸ External Editing.".to_string()
+        "Ubunye Photo isn't installed. Get it from www.thabangvision.com/tools/photo, or give where it is in Settings ▸ External Editing.".to_string()
     })
 }
 
@@ -128,19 +151,19 @@ fn find_photocraft() -> Option<Launcher> {
     let env = |k: &str| std::env::var_os(k).map(|v| v.to_string_lossy().to_string());
     if cfg!(target_os = "macos") {
         // the usual places, then wherever Spotlight knows it (by bundle id or bundle name)
-        let home = env("HOME").map(|h| Path::new(&h).join("Applications/PhotoCraft.app"));
-        let usual = [Some(PathBuf::from("/Applications/PhotoCraft.app")), home].into_iter().flatten().find(|p| p.is_dir());
+        let usual = mac_candidates(env("HOME")).into_iter().find(|p| p.is_dir());
         let spotlight = || {
-            let query = format!("kMDItemCFBundleIdentifier == '{PHOTOCRAFT_ID}' || kMDItemFSName == 'PhotoCraft.app'");
+            let names: Vec<String> = ubunye_photo::MAC_BUNDLES.iter().map(|b| format!(" || kMDItemFSName == '{b}'")).collect();
+            let query = format!("kMDItemCFBundleIdentifier == '{PHOTOCRAFT_ID}'{}", names.concat());
             let out = Command::new("mdfind").arg(query).output().ok().filter(|o| o.status.success())?;
             mdfind_app(&String::from_utf8_lossy(&out.stdout))
         };
         return usual.or_else(spotlight).map(|p| Launcher::MacApp(p.to_string_lossy().to_string()));
     }
     if cfg!(target_os = "windows") {
-        let install_dir = reg_query(r"HKLM\Software\PhotoCraft", Some("InstallDir"));
-        let app_path = reg_query(r"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\photocraft.exe", None);
-        return windows_candidates(install_dir, app_path, env).into_iter().find(|p| p.is_file()).map(Launcher::Program);
+        let install_dirs: Vec<String> = ubunye_photo::WIN_KEYS.iter().filter_map(|k| reg_query(k, Some("InstallDir"))).collect();
+        let app_paths: Vec<String> = ubunye_photo::WIN_APP_PATHS.iter().filter_map(|k| reg_query(k, None)).collect();
+        return windows_candidates(install_dirs, app_paths, env).into_iter().find(|p| p.is_file()).map(Launcher::Program);
     }
     // Linux, FreeBSD: on the PATH (.deb, .rpm, tarball), a desktop entry (AppImage, which
     // registers one on first run; its Exec a path or a name on the PATH), an AppImage where people
@@ -153,7 +176,7 @@ fn find_photocraft() -> Option<Launcher> {
             desktop_exec(&text)
                 // a wrapper (`Exec=env VAR=1 /opt/PhotoCraft/photocraft %F`) would be started with the photo only:
                 // skip it and look further
-                .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase().contains("photocraft")))
+                .filter(|p| p.file_name().is_some_and(|n| is_photo_program_name(&n.to_string_lossy())))
                 .and_then(|p| on_path(&p))
         })
     };
@@ -177,18 +200,37 @@ fn find_photocraft() -> Option<Launcher> {
     flatpak.then_some(Launcher::Flatpak)
 }
 
-/// Where the Windows installers put `photocraft.exe`, most specific first: the folder the MSI
-/// recorded (`HKLM\Software\PhotoCraft\InstallDir`), its App Paths entry, then the default
-/// folders (per machine, then per user).
-fn windows_candidates(install_dir: Option<String>, app_path: Option<String>, env: impl Fn(&str) -> Option<String>) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = Vec::new();
-    out.extend(install_dir.map(|d| Path::new(&d).join("photocraft.exe")));
-    out.extend(app_path.map(|p| PathBuf::from(p.trim_matches('"'))));
-    for var in ["ProgramW6432", "ProgramFiles"] {
-        out.extend(env(var).map(|d| Path::new(&d).join("PhotoCraft").join("photocraft.exe")));
+/// macOS: the app bundles in /Applications, then in ~/Applications.
+fn mac_candidates(home: Option<String>) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = ubunye_photo::MAC_BUNDLES.iter().map(|b| Path::new("/Applications").join(b)).collect();
+    if let Some(h) = home {
+        out.extend(ubunye_photo::MAC_BUNDLES.iter().map(|b| Path::new(&h).join("Applications").join(b)));
     }
-    out.extend(env("LOCALAPPDATA").map(|d| Path::new(&d).join("Programs").join("PhotoCraft").join("photocraft.exe")));
     out
+}
+
+/// Where the Windows installers put `photocraft.exe`, most specific first: the folders the MSI
+/// recorded (`InstallDir`, see [`ubunye_photo::WIN_KEYS`]), its App Paths entries, then the
+/// default folders (per machine, then per user).
+fn windows_candidates(install_dirs: Vec<String>, app_paths: Vec<String>, env: impl Fn(&str) -> Option<String>) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    out.extend(install_dirs.iter().map(|d| Path::new(d).join("photocraft.exe")));
+    out.extend(app_paths.iter().map(|p| PathBuf::from(p.trim_matches('"'))));
+    for var in ["ProgramW6432", "ProgramFiles"] {
+        if let Some(root) = env(var) {
+            out.extend(ubunye_photo::WIN_MACHINE_DIRS.iter().map(|d| Path::new(&root).join(d).join("photocraft.exe")));
+        }
+    }
+    if let Some(local) = env("LOCALAPPDATA") {
+        out.extend(ubunye_photo::WIN_USER_DIRS.iter().map(|d| Path::new(&local).join("Programs").join(d).join("photocraft.exe")));
+    }
+    out
+}
+
+/// A Linux program or AppImage file name that is Ubunye Photo's (or upstream PhotoCraft's).
+fn is_photo_program_name(name: &str) -> bool {
+    let name = name.to_lowercase();
+    ubunye_photo::LINUX_MARKS.iter().any(|m| name.contains(m))
 }
 
 /// A string value from the Windows registry (`reg query`; `None` = the key's default value).
@@ -268,7 +310,7 @@ fn version_key(name: &str) -> Vec<(u64, String)> {
 /// An AppImage of PhotoCraft by its file name (`PhotoCraft-1.2-x86_64.AppImage`, any case).
 fn is_photocraft_appimage(p: &Path) -> bool {
     let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-    name.contains("photocraft") && name.ends_with(".appimage")
+    is_photo_program_name(&name) && name.ends_with(".appimage")
 }
 
 /// The first application bundle in `mdfind` output (one path per line).
@@ -317,13 +359,39 @@ mod tests {
             "LOCALAPPDATA" => Some(r"C:\Users\Simon\AppData\Local".to_string()),
             _ => None,
         };
-        let c = windows_candidates(Some(r"D:\Apps\PhotoCraft\".into()), Some(r#""C:\Program Files\PhotoCraft\photocraft.exe""#.into()), env);
+        let c = windows_candidates(vec![r"D:\Apps\PhotoCraft\".into()], vec![r#""C:\Program Files\PhotoCraft\photocraft.exe""#.into()], env);
         let c: Vec<String> = c.iter().map(|p| p.to_string_lossy().replace('/', "\\")).collect();
         assert!(c[0].starts_with(r"D:\Apps\PhotoCraft") && c[0].ends_with("photocraft.exe"), "{c:?}");
         assert_eq!(c[1], r"C:\Program Files\PhotoCraft\photocraft.exe", "App Paths, quotes dropped");
         assert!(c[2].starts_with(r"C:\Program Files") && c[2].ends_with("photocraft.exe"), "{c:?}");
-        assert!(c[3].contains("Programs") && c[3].ends_with("photocraft.exe"), "{c:?}");
-        assert_eq!(c.len(), 4);
+        assert!(c.last().is_some_and(|l| l.contains("Programs") && l.ends_with("photocraft.exe")), "{c:?}");
+        assert_eq!(c.len(), 2 + ubunye_photo::WIN_MACHINE_DIRS.len() + ubunye_photo::WIN_USER_DIRS.len());
+    }
+
+    /// Ubunye: Edit In finds Ubunye Photo where its own installers put it, before upstream's names.
+    #[test]
+    fn ubunye_photo_is_looked_for_where_its_installers_put_it() {
+        let env = |k: &str| match k {
+            "ProgramW6432" => Some(r"C:\Program Files".to_string()),
+            "LOCALAPPDATA" => Some(r"C:\Users\Thabo\AppData\Local".to_string()),
+            _ => None,
+        };
+        let c: Vec<String> = windows_candidates(vec![], vec![], env).iter().map(|p| p.to_string_lossy().replace('/', "\\")).collect();
+        assert_eq!(c[0], r"C:\Program Files\Ubunye AI Ecosystems\Ubunye Photo\photocraft.exe", "0.7 MSI, for everyone");
+        assert_eq!(c[1], r"C:\Program Files\Ubunye Photo\photocraft.exe", "0.6 MSI");
+        assert!(c.contains(&r"C:\Users\Thabo\AppData\Local\Programs\Ubunye AI Ecosystems\Ubunye Photo\photocraft.exe".to_string()), "{c:?}");
+        let ours = c.iter().position(|p| p.contains("Ubunye Photo"));
+        let upstream = c.iter().position(|p| p.contains(r"\PhotoCraft\"));
+        assert!(ours < upstream, "ours first: {c:?}");
+        assert_eq!(ubunye_photo::WIN_KEYS[0], r"HKLM\Software\Ubunye AI Ecosystems\Ubunye Photo", "the key Photo's MSI writes");
+        let m = mac_candidates(Some("/Users/thabo".into()));
+        assert_eq!(m[0], PathBuf::from("/Applications/Ubunye Photo.app"));
+        assert!(m.contains(&PathBuf::from("/Users/thabo/Applications/PhotoCraft.app")), "{m:?}");
+        assert!(is_photocraft_appimage(Path::new("/home/thabo/Applications/ubunye-creative-photo-0.7.0-linux-x86_64.AppImage")));
+        assert!(is_photocraft_appimage(Path::new("PhotoCraft-1.2-x86_64.AppImage")));
+        assert!(!is_photocraft_appimage(Path::new("ubunye-creative-light-0.7.0-linux-x86_64.AppImage")), "not this app");
+        assert!(is_photo_program_name("photocraft"));
+        assert_eq!(PHOTOCRAFT_ID, "org.ubunye.creative.photo", "desktop entry and Flatpak id");
     }
 
     #[test]
@@ -390,7 +458,7 @@ mod tests {
             let _ = is_photocraft_appimage(Path::new(p));
         }
         let _ = desktop_entry_dirs(|_| None);
-        let _ = windows_candidates(None, Some("\"".into()), |_| None);
+        let _ = windows_candidates(vec![], vec!["\"".into()], |_| None);
     }
 
     #[test]
