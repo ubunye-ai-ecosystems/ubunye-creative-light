@@ -1,15 +1,15 @@
-# LightCraft — the desktop app (`lightcraft`) and the CLI/MCP server (`lightcraft-cli`), built from
+# Ubunye Light — the desktop app (`lightcraft`) and the CLI/MCP server (`lightcraft-cli`), built from
 # this repository:
 #
 #   nix build          # → ./result/bin/lightcraft, ./result/bin/lightcraft-cli
 #
 # Kept in step with the release workflow (.github/workflows/release.yml) and packaging/env.sh:
-#   * `Cargo.lock` drives the dependencies (`cargoLock`), so there is no vendorHash to bump — only
-#     crates.io, no git sources;
+#   * `Cargo.lock` drives the dependencies (`cargoLock`), so there is no vendorHash to bump. The git
+#     source (storytold/craft-libs) is fetched at the revision the lock file pins;
 #   * `CRAFT_FONTS_DIR` embeds the CJK fonts from storytold/craft-fonts (the `craft-fonts`
 #     flake input); without it everything builds and runs, but Japanese and Chinese text have no glyphs;
 #   * the desktop file, hicolor icons and AppStream metadata are the same files the .deb/.rpm ship
-#     (packaging/linux/), so `apt` and NixOS users see one identical LightCraft;
+#     (packaging/linux/), so `apt` and NixOS users see one identical Ubunye Light;
 #   * `doCheck` runs `cargo test --workspace`, what `cargo xtask ci` runs. `nix build` runs it too;
 #     `pkgs.lightcraft.overrideAttrs { doCheck = false; }` skips it for a faster, build-only install.
 #
@@ -32,6 +32,9 @@
   libxi,
   libxrandr,
   vulkan-loader,
+  libglvnd,
+  # rfd opens libdbus-1 at run time to reach the xdg-desktop-portal file chooser (Open/Save dialogs).
+  dbus,
   # Validates the desktop file and the AppStream metadata we install (as CI does).
   desktop-file-utils,
   appstream,
@@ -53,11 +56,12 @@ let
   isLinux = stdenv.hostPlatform.isLinux;
 
   # AppStream id: also the desktop file name, and the icon name in share/icons/hicolor.
-  appId = "ai.storyteller.lightcraft";
+  appId = "org.ubunye.creative.light";
 
   # Libraries the binaries open at run time with dlopen(): nothing links them, so no RPATH points at
-  # them — winit loads libxkbcommon/libxcb, wgpu the Vulkan loader (NixOS patches that loader to
-  # find the drivers in /run/opengl-driver). The wrapper below points LD_LIBRARY_PATH here.
+  # them — winit loads libwayland-client/libxkbcommon/libxcb, rfd libdbus-1, wgpu the Vulkan loader
+  # or libEGL (NixOS patches that loader to find the drivers in /run/opengl-driver). The wrapper
+  # below points LD_LIBRARY_PATH here.
   runtimeLibs = lib.optionals isLinux [
     libxkbcommon
     wayland
@@ -67,6 +71,8 @@ let
     libxi
     libxrandr
     vulkan-loader
+    libglvnd
+    dbus
   ];
 
   # The two native binaries. The wasm app (apps/lightcraft-web) is built by `cargo xtask web`, not
@@ -98,7 +104,11 @@ rustPlatform.buildRustPackage {
       ]);
   };
 
-  cargoLock.lockFile = root + "/Cargo.lock";
+  cargoLock = {
+    lockFile = root + "/Cargo.lock";
+    # The git dependency (storytold/craft-libs) is pinned by revision in Cargo.lock.
+    allowBuiltinFetchGit = true;
+  };
 
   # Both binaries, as the .deb/.rpm install them (`packaging/linux/package.sh`).
   cargoBuildFlags = [
@@ -194,12 +204,12 @@ rustPlatform.buildRustPackage {
   meta = {
     description = "Photo library and non-destructive raw developer";
     longDescription = ''
-      LightCraft organises a photo library and develops raw files non-destructively: masks,
+      Ubunye Light organises a photo library and develops raw files non-destructively: masks,
       presets, colour grading, local adjustments and batch export, driven by the same command
       layer as its UI. It ships with lightcraft-cli, a headless renderer, command runner and MCP
       server for AI agents.
     '';
-    homepage = "https://getartcraft.com/apps/lightcraft";
+    homepage = "https://www.thabangvision.com/tools/light";
     license = with lib.licenses; [
       mit
       asl20

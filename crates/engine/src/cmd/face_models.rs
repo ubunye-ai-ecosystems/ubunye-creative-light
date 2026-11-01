@@ -27,6 +27,9 @@ pub(super) struct FaceSettings {
     pub(super) enabled: bool,
     /// The installed recogniser in use.
     pub(super) embedder: Option<String>,
+    /// Keep every face model on the CPU, even when the GPU would be faster.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) cpu_only: bool,
 }
 
 fn fail(what: &str, e: impl std::fmt::Display) -> EngineError {
@@ -55,6 +58,13 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         let _ = std::fs::remove_file(&part);
         fail(&format!("could not write {}", path.display()), e)
     })
+}
+
+/// Keep the face models on the CPU (or let them use the GPU again).
+pub(super) fn set_cpu_only(dir: &Path, on: bool) -> Result<()> {
+    let mut st = read_settings(dir);
+    st.cpu_only = on;
+    write_settings(dir, &st)
 }
 
 fn write_settings(dir: &Path, st: &FaceSettings) -> Result<()> {
@@ -195,6 +205,8 @@ fn list(s: &mut Session, _: &Value) -> Result<Value> {
         "dir": dir.as_ref().map(|d| d.display().to_string()),
         "enabled": settings.enabled,
         "embedder": settings.embedder,
+        // where the models run: {cpuOnly, detection, recognition} as `faces.gpu` gives it
+        "gpu": super::face_detect::gpu_json(s),
         // Native builds always have the pure-Rust runner; model files/background scanning remain native-only.
         "runtime": cfg!(not(target_arch = "wasm32")),
         "models": models,
@@ -342,7 +354,7 @@ fn download(s: &mut Session, p: &Value) -> Result<Value> {
     let id = str_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
     let dir = models_dir(s, C)?;
     refresh_catalog(s);
-    let spec = download_spec(s, id).ok_or_else(|| bad(C, "LightCraft has no download for that model: get the file from its page, then add it"))?;
+    let spec = download_spec(s, id).ok_or_else(|| bad(C, "Ubunye Light has no download for that model: get the file from its page, then add it"))?;
     if cfg!(target_arch = "wasm32") {
         return Err(bad(C, "the web build downloads no models"));
     }
@@ -464,6 +476,8 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     if st.embedder.as_deref() == Some(id) {
         // another installed recogniser takes over, so recognition keeps working; with none left nothing is chosen
         st.embedder = installed_models(&dir).into_iter().find(|i| i.manifest.id != id && i.manifest.role == Role::Embedder).map(|i| i.manifest.id);
+        // on with nothing to run is not a state (issue #678)
+        st.enabled &= st.embedder.is_some();
         write_settings(&dir, &st)?;
     }
     Ok(json!({"removed": id, "embedder": st.embedder}))
@@ -491,7 +505,15 @@ fn enable(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "faces.enable";
     let dir = models_dir(s, C)?;
     let mut st = read_settings(&dir);
-    st.enabled = p.get("enabled").and_then(Value::as_bool).unwrap_or(!st.enabled);
+    let on = p.get("enabled").and_then(Value::as_bool).unwrap_or(!st.enabled);
+    // on means something only with a model to run (issue #678): a toggle that is on with nothing
+    // chosen would sit there doing nothing, with no word about why
+    let usable =
+        st.embedder.as_deref().is_some_and(|id| installed_models(&dir).iter().any(|i| i.manifest.id == id && i.manifest.role == Role::Embedder));
+    if on && !usable {
+        return Err(bad(C, "choose a recognition model first (Settings ▸ Faces ▸ Use)"));
+    }
+    st.enabled = on;
     write_settings(&dir, &st)?;
     // the background scan notices at once, not within the second it trusts its last look
     #[cfg(not(target_arch = "wasm32"))]
@@ -506,7 +528,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "faces.models.list", "Face Models", [], None, "{} → {dir, enabled, embedder, runtime, models: [{id, name, role, licence{name, commercial, url, notice}, provenance, source, sizeBytes, known, installed, selected}]}", always, list),
         cmd!(query "faces.models.inspect", "Inspect Face Model File", [], None, "{path} → what a .onnx file is: {kind: known | draft | unsupported, model, assumptions, reason, alreadyInstalled}; installs nothing", always, inspect),
         cmd!(query "faces.models.install", "Install Face Model", [], None, "{path, acknowledged: true, activate?: true} → {installed, active: {embedder, enabled}} — copy a .onnx face recognition model into the models folder. `acknowledged` must be true: the user has been shown its licence (see inspect) and accepted it. Unless `activate` is false the model becomes the one in use and recognition is switched on; an earlier model stays installed", always, install),
-        cmd!(query "faces.models.download", "Download Face Model", [], None, "{id, acknowledged: true} → {started, from} — fetch a recognition model LightCraft has a pinned address for (see `downloadHost` in the list), in the background over pure-Rust https (lightcraft-fetch). `acknowledged` must be true: the user has been shown the model's terms and accepted them. It is checked against its size and SHA-256, then installed, chosen and switched on by itself; `faces.models.downloads` shows how far it is", always, download),
+        cmd!(query "faces.models.download", "Download Face Model", [], None, "{id, acknowledged: true} → {started, from} — fetch a recognition model Ubunye Light has a pinned address for (see `downloadHost` in the list), in the background over pure-Rust https (lightcraft-fetch). `acknowledged` must be true: the user has been shown the model's terms and accepted them. It is checked against its size and SHA-256, then installed, chosen and switched on by itself; `faces.models.downloads` shows how far it is", always, download),
         cmd!(query "faces.models.downloads", "Face Model Downloads", [], None, "{} → {running, downloads: [{id, state: running | done | installed | failed | cancelled, bytes, total, error, from}]} — also installs any download that has arrived; `installed` stays listed until `faces.models.downloadCancel` clears it", always, downloads),
         cmd!(query "faces.models.downloadCancel", "Cancel Face Model Download", [], None, "{id} → {discarded} — stop a download, or delete a finished one that was not installed", always, download_cancel),
         cmd!(query "faces.models.test", "Test Face Model", [], None, "{id} → {ok, result: {loadMs, embedMs, dimension, checks}} — load an installed recognition model and check it gives sensible faces; needs the recognition runtime", always, test),

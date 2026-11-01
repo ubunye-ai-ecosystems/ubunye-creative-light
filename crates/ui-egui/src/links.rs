@@ -1,31 +1,31 @@
-//! Community and project links (Help menu, About dialog, top-bar Discord button).
+//! Community and project links (Help menu, About dialog, top-bar questions button).
 
-/// The app's id in ArtCraft URLs.
-pub const APP: &str = "lightcraft";
-/// The ArtCraft community Discord.
-pub const DISCORD: &str = "https://discord.gg/artcraft";
-/// The ArtCraft website.
-pub const WEBSITE: &str = "https://getartcraft.com";
-/// This app's page on the ArtCraft website.
-pub const APP_PAGE: &str = "https://getartcraft.com/apps/lightcraft";
+/// The app's id in product-page URLs.
+pub const APP: &str = "light";
+/// Questions and ideas (the issue tracker; the command id stays `app.discord`).
+pub const DISCORD: &str = lightcraft_engine::brand::ISSUES;
+/// The suite's website.
+pub const WEBSITE: &str = lightcraft_engine::brand::SUITE_URL;
+/// This app's product page.
+pub const APP_PAGE: &str = lightcraft_engine::brand::HOMEPAGE;
 /// This app's source repository.
-pub const GITHUB: &str = "https://github.com/storytold/lightcraft";
+pub const GITHUB: &str = lightcraft_engine::brand::SOURCE;
 
 /// (UI command id, menu label, URL) for each link, in Help-menu order.
 /// The user documentation (docs/ in the repository).
-pub const HELP: &str = "https://github.com/storytold/lightcraft/tree/main/docs";
+pub const HELP: &str = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/tree/main/docs";
 
 pub const LINKS: &[(&str, &str, &str)] = &[
-    ("app.help", "LightCraft Help", HELP),
-    ("app.discord", "Join the ArtCraft Discord…", DISCORD),
-    ("app.website", "LightCraft Website", APP_PAGE),
-    ("app.github", "LightCraft on GitHub", GITHUB),
-    ("app.artcraft", "ArtCraft Website", WEBSITE),
+    ("app.help", "Ubunye Light Help", HELP),
+    ("app.discord", "Questions and Ideas…", DISCORD),
+    ("app.website", "Ubunye Light Website", APP_PAGE),
+    ("app.github", "Ubunye Light on GitHub", GITHUB),
+    ("app.artcraft", "Ubunye Creative Studio Website", WEBSITE),
     ("app.feedback", "Send Feedback…", FEEDBACK),
 ];
 
 /// Where feedback and bug reports go.
-pub const FEEDBACK: &str = "https://github.com/storytold/lightcraft/issues/new";
+pub const FEEDBACK: &str = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues/new";
 
 /// The URL behind a link command id.
 pub fn url_of(cmd: &str) -> Option<&'static str> {
@@ -50,7 +50,7 @@ mod tests {
             assert!(!label.is_empty());
             assert_eq!(url_of(id), Some(*url));
         }
-        assert!(APP_PAGE.ends_with(&format!("/apps/{APP}")));
-        assert!(GITHUB.ends_with(&format!("/storytold/{APP}")));
+        assert!(APP_PAGE.ends_with(&format!("/tools/{APP}")));
+        assert!(GITHUB.ends_with("/ubunye-ai-ecosystems/ubunye-creative-light"));
     }
 }

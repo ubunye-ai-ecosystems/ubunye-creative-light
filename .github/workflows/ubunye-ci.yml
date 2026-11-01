@@ -1,0 +1,78 @@
+# Ubunye CI gate. Upstream workflows are left as they are; this file is Ubunye-owned.
+name: ubunye-ci
+on:
+  pull_request:
+    branches: [develop, "release/**", main]
+  push:
+    branches: [develop]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: ubunye-ci-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2         # TODO(M2): pin by SHA
+      - name: Fonts (craft-fonts, the revision packaging/fonts.sh pins)
+        shell: bash
+        run: |
+          git clone --quiet --no-checkout https://github.com/storytold/craft-fonts "$RUNNER_TEMP/craft-fonts"
+          git -C "$RUNNER_TEMP/craft-fonts" checkout --quiet --detach b076417b5880bd4154bd22f00695b1d28c6bea83
+          echo "CRAFT_FONTS_DIR=$RUNNER_TEMP/craft-fonts" >>"$GITHUB_ENV"
+      - name: Build
+        run: cargo build --locked --workspace
+      - name: Test
+        run: cargo test --locked --workspace --no-fail-fast
+      - name: Smoke (import → edit → save → reopen → export)
+        if: runner.os != 'Windows' && hashFiles('ubunye/scripts/smoke.sh') != ''
+        run: bash ubunye/scripts/smoke.sh "$PWD/target/debug/lightcraft-cli" "$RUNNER_TEMP/smoke"
+
+  upstream-gate:
+    # Upstream's own full gate (fmt, clippy -D warnings, tests, layers, assets, wasm).
+    # Informational until a green baseline is recorded in ubunye/DEVELOPMENT.md.
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: Fonts (craft-fonts, the revision packaging/fonts.sh pins)
+        shell: bash
+        run: |
+          git clone --quiet --no-checkout https://github.com/storytold/craft-fonts "$RUNNER_TEMP/craft-fonts"
+          git -C "$RUNNER_TEMP/craft-fonts" checkout --quiet --detach b076417b5880bd4154bd22f00695b1d28c6bea83
+          echo "CRAFT_FONTS_DIR=$RUNNER_TEMP/craft-fonts" >>"$GITHUB_ENV"
+      - run: cargo xtask ci
+
+  brand-leak:
+    # Blocking since the rebrand was applied (2026-10-11): ubunye/brand/apply.py --check lists any
+    # ArtCraft mark, upstream id/link or user-visible LightCraft string outside the allow-list, and
+    # any scripted brand change an upstream merge undid. Fix: python -I ubunye/brand/apply.py
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Brand check
+        run: python -I ubunye/brand/apply.py --check | tee -a "$GITHUB_STEP_SUMMARY"

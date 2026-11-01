@@ -35,10 +35,10 @@ const UTF8: u16 = 0x0800;
 const DOS_DATE: u16 = (1 << 5) | 1;
 
 /// The readme inside every backup.
-pub const README: &str = "LightCraft library backup (browser version)\n\n\
+pub const README: &str = "Ubunye Light library backup (browser version)\n\n\
 library/      the catalog (catalog.snap + catalog.log), presets, view state and preferences\n\
 originals/    every imported photo, as originals/<content hash>/<file name>\n\n\
-Restore it in LightCraft for the web with File > Restore Library from Backup...\n\
+Restore it in Ubunye Light for the web with File > Restore Library from Backup...\n\
 The photos in originals/ are the untouched files you imported; edits live in the catalog.\n";
 
 /// Is `name` a safe library folder name (`library` or `library-<letters, digits, ->`)?
@@ -50,6 +50,18 @@ pub fn valid_library_dir(name: &str) -> bool {
 /// Is `h` a plausible content hash (used as a storage key segment)?
 pub fn valid_hash(h: &str) -> bool {
     !h.is_empty() && h.len() <= 128 && h.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// Why a backup can't start yet, given [`lightcraft_engine::Session::unsaved`]: changes applied in
+/// the app but not yet written to browser storage (a save failed). The zip copies the stored
+/// library files, so it would report success while missing them; `None` when everything is saved.
+pub fn unsaved_refusal(unsaved: Option<(usize, &str)>) -> Option<String> {
+    let (ops, why) = unsaved?;
+    let changes = if ops == 1 { "1 change".to_string() } else { format!("{ops} changes") };
+    Some(format!(
+        "Backup not started: {changes} could not be saved to browser storage yet ({why}), so the backup would miss them. \
+         Free up storage space; Ubunye Light retries the save with every change. Back up once nothing is left unsaved."
+    ))
 }
 
 /// Zip entry name for an original.
@@ -234,7 +246,7 @@ pub fn data_offset(entry: &ZipEntry, local: &[u8]) -> Result<u64, String> {
 /// Check an entry's bytes.
 pub fn verify(entry: &ZipEntry, data: &[u8]) -> Result<(), String> {
     if entry.method != 0 {
-        return Err(format!("{}: compressed entries are not supported (not a LightCraft backup?)", entry.name));
+        return Err(format!("{}: compressed entries are not supported (not an Ubunye Light backup?)", entry.name));
     }
     if data.len() as u64 != entry.size || crc32fast::hash(data) != entry.crc {
         return Err(format!("{}: damaged (checksum mismatch)", entry.name));

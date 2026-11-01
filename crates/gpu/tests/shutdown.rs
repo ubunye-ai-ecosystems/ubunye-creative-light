@@ -21,7 +21,8 @@ fn nothing_renders_on_the_gpu_once_the_process_is_ending() {
     let req = RenderRequest::fit(w, h);
     let has_gpu = lightcraft_gpu::available();
     if !has_gpu {
-        eprintln!("no GPU adapter ({:?}): only the CPU side is checked", lightcraft_gpu::unavailable_reason());
+        let why = lightcraft_gpu::unavailable_reason().unwrap_or_default();
+        lightcraft_testkit::skip!(Gpu, "no GPU adapter ({why}), so only the CPU side is checked");
     }
     assert!(!lightcraft_gpu::shutting_down());
     assert!(lightcraft_gpu::wait_idle(Duration::ZERO), "nothing is in flight yet");
@@ -53,6 +54,6 @@ fn nothing_renders_on_the_gpu_once_the_process_is_ending() {
     assert!(lightcraft_gpu::render(&src, &info, &s, &req, None).is_none(), "no GPU render once the process is ending");
     assert!(lightcraft_gpu::wait_idle(Duration::ZERO));
     if has_gpu {
-        assert_eq!(lightcraft_gpu::unavailable_reason().as_deref(), Some("LightCraft is closing"));
+        assert_eq!(lightcraft_gpu::unavailable_reason().as_deref(), Some("Ubunye Light is closing"));
     }
 }

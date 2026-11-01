@@ -31,7 +31,7 @@ fn rawnind_bayer() -> Known {
             name: "GPL-3.0".into(),
             commercial: Commercial::Yes,
             url: Some("https://www.gnu.org/licenses/gpl-3.0.html".into()),
-            notice: "The weights are published under the GNU General Public License v3. LightCraft does not include them: they \
+            notice: "The weights are published under the GNU General Public License v3. Ubunye Light does not include them: they \
                      are downloaded to your computer at your request and used by it only. If you pass the model file on, the \
                      GPL applies to that copy. Commercial use is subject to the GPL terms, including applicable source, licence and notice obligations on redistribution."
                 .into(),

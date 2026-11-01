@@ -1,0 +1,43 @@
+{
+  "$schema_version": 1,
+  "app": "ubunye-creative-light",
+  "upstream": {
+    "name": "LightCraft",
+    "url": "https://github.com/storytold/lightcraft.git",
+    "branch": "main",
+    "license": "MIT OR Apache-2.0"
+  },
+  "last_checked_at": "2026-11-01T12:00:00Z",
+  "last_integrated": {
+    "sha": "07301cbd1e1cab5c152228891d9c9ed87e263003",
+    "date": "2026-10-31T23:42:58-04:00",
+    "upstream_version": "0.16.0",
+    "upstream_tag": "v0.16.0",
+    "upstream_describe": "v0.16.0-641-g07301cbd",
+    "method": "merge",
+    "merged_pr": null,
+    "merged_by": null,
+    "merged_at": null
+  },
+  "pending": null,
+  "history": [
+    {
+      "sha": "b70ae1741e8236757377ca85eecaafb8788a82ab",
+      "outcome": "initial-import",
+      "commits": 1552,
+      "conflicts": 0,
+      "ci": "not-run",
+      "recorded_at": "2026-10-10T17:08:55Z"
+    },
+    {
+      "sha": "07301cbd1e1cab5c152228891d9c9ed87e263003",
+      "outcome": "merge",
+      "commits": 3248,
+      "conflicts": 61,
+      "conflict_hunks": 121,
+      "ci": "pending",
+      "recorded_at": "2026-11-01T12:00:00Z",
+      "note": "branch sync/upstream-v0.16; 44 brand-only conflicts taken from upstream and re-branded by ubunye/brand/apply.py, 17 with Ubunye changes re-applied by hand"
+    }
+  ]
+}

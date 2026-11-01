@@ -1,0 +1,5 @@
+# Ubunye pin (upstream floats on stable). 1.97.0 was verified on 2026-10-10.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
