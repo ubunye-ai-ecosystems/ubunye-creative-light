@@ -31,6 +31,7 @@ upstream = "https://github.com/storytold/lightcraft"
 [siblings]
 # Upstream hands photos to PhotoCraft (Photo > Edit In); ours is Ubunye Photo (ubunye-creative-photo).
 photo_app_id = "org.ubunye.creative.photo"
+photo_name = "Ubunye Photo"
 photo_page = "https://www.thabangvision.com/tools/photo"
 
 [upstream_identity_to_replace]
