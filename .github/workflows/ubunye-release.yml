@@ -1,0 +1,95 @@
+# Ubunye-owned. Automatic release to downloads.thabangvision.com, all on GitHub's runners.
+# When develop carries a workspace version newer than the one on the download page:
+#   1. build the installers (dispatches ubunye-collab-packages on this commit and waits for it)
+#   2. create the GitHub release ubunye-light-v<version> with those files
+#   3. publish it (ubunye/scripts/publish_downloads.py: GitHub -> R2 via the ingest Worker)
+# Bump [workspace.package] version in Cargo.toml in the PR that should ship; merging it into develop
+# (only after its checks are green) is the release. Secret: INGEST_KEY.
+name: ubunye-release
+
+on:
+  push:
+    branches: [develop]
+    paths: [Cargo.toml]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: ubunye-release
+  cancel-in-progress: false
+
+env:
+  APP: light
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this version newer than the download page?
+        id: v
+        run: |
+          V=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\([^"]*\)".*/\1/p}' Cargo.toml | head -1)
+          LIVE=$(curl -fsS "https://downloads.thabangvision.com/$APP/latest.json" | jq -r .version || echo 0.0.0)
+          echo "develop has $V, the download page has $LIVE"
+          NEWEST=$(printf '%s\n%s\n' "$V" "$LIVE" | sort -V | tail -1)
+          if [ -n "$V" ] && [ "$V" != "$LIVE" ] && [ "$NEWEST" = "$V" ]; then GO=true; else GO=false; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"; echo "go=$GO" >> "$GITHUB_OUTPUT"; echo "go=$GO"
+
+      - name: Build the installers (ubunye-collab-packages on this commit)
+        if: steps.v.outputs.go == 'true'
+        id: build
+        run: |
+          START=$(date -u +%FT%TZ)
+          gh workflow run ubunye-collab-packages.yml --ref "$GITHUB_REF_NAME"
+          RUN=""
+          for i in $(seq 1 30); do
+            sleep 10
+            RUN=$(gh run list --workflow ubunye-collab-packages.yml --event workflow_dispatch --commit "$GITHUB_SHA" \
+                  --created ">=$START" --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$RUN" ] && break
+          done
+          [ -n "$RUN" ] || { echo "::error::the installer build did not start"; exit 1; }
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          echo "installer build: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN"
+          gh run watch "$RUN" --interval 60 --exit-status > /dev/null
+
+      - name: Create the GitHub release
+        if: steps.v.outputs.go == 'true'
+        id: rel
+        run: |
+          TAG="ubunye-$APP-v${{ steps.v.outputs.version }}"
+          gh run download "${{ steps.build.outputs.run }}" -D dist
+          mapfile -t FILES < <(find dist -type f | sort)
+          printf '%s\n' "${FILES[@]}"
+          [ "${#FILES[@]}" -gt 0 ] || { echo "::error::no installer files"; exit 1; }
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" "${FILES[@]}" --target "$GITHUB_SHA" --title "$TAG" \
+              --notes "Built and published automatically from $GITHUB_SHA. Downloads: https://www.thabangvision.com/tools/$APP"
+          else
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          fi
+          echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to downloads.thabangvision.com
+        if: steps.v.outputs.go == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INGEST_KEY: ${{ secrets.INGEST_KEY }}
+        run: python3 -I ubunye/scripts/publish_downloads.py "$APP" "${{ steps.rel.outputs.id }}"
+
+      - name: Check the download page
+        if: steps.v.outputs.go == 'true'
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          LIVE=$(curl -fsS -H 'Cache-Control: no-cache' "https://downloads.thabangvision.com/$APP/latest.json?t=$(date +%s)" | jq -r .version)
+          [ "$LIVE" = "$V" ] || { echo "::error::download page shows $LIVE, expected $V"; exit 1; }
+          curl -fsS "https://downloads.thabangvision.com/$APP/latest.json?t=$(date +%s)" | jq -r '.files[].url' | while read -r u; do
+            code=$(curl -s -o /dev/null -I -w '%{http_code}' "$u"); echo "$code $u"; [ "$code" = 200 ] || exit 1
+          done
