@@ -10,7 +10,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use super::kopano::*;
+use super::kopano::{
+    ACTIVITY_KEEP, Client, Config, DEFAULT_API_PORT, Member, NOT_RUNNING, RELINK_QUIET_MS, Review, Said, State, Teammate, ago, api_port_with,
+    app_port, holds, home_with, is_hex_id, plain, read_record, read_token, record_path, setting_text, short, write_record,
+};
 use super::kopano_panel::KopanoPanel;
 
 const ALICE: &str = "c013b977c6b7b2118e21cbcb4cfd63800a5f798409997d4007fbe00b8438d344";
