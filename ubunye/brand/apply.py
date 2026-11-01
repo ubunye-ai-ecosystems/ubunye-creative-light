@@ -342,8 +342,6 @@ RULES: list[tuple[str, str, str]] = [
      "($directories['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '" + WIN_SUITE_FOLDER + "'"),
     ("packaging/windows/test-install-folder.ps1", "Set-TestValue 'Software\\LightCraft' 'InstallFolder'",
      f"Set-TestValue '{WIN_KEY}' 'InstallFolder'"),
-    (".github/workflows/windows-arm64.yml", "install-relative-path: Programs/ArtCraft/LightCraft",
-     f"install-relative-path: Programs/{VENDOR}/{NAME}"),
     # packaging: Linux (the ArtCraft launcher's versions folder is not ours to read)
     ("packaging/linux/flatpak/" + APP_ID + ".yml", "  - --filesystem=xdg-data/ArtCraft/versions:ro\n", ""),
     ("packaging/linux/flatpak/" + APP_ID + ".bundle.yml", "  - --filesystem=xdg-data/ArtCraft/versions:ro\n", ""),

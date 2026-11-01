@@ -7,7 +7,7 @@
 #                through update-alternatives as /usr/bin/kopanod)
 # Each job also installs and removes its package for real (one app). The test with two apps
 # (Light + Photo, Light + Film) is ubunye-collab-interop.yml. See ubunye/packaging/README.md. Test builds only: nothing is released or uploaded anywhere,
-# and this workflow uses no signing secrets (release.yml keeps the real signing).
+# and this workflow uses no signing secrets (upstream's release.yml, not carried here, did the real signing).
 name: ubunye-collab-packages
 
 on:
@@ -75,7 +75,7 @@ jobs:
         shell: bash
         run: printf '[toolchain]\nchannel = "%s"\n' "$KOPANO_RUST" > kopano-src/research/kopano/lab/rust-toolchain.toml
       # FUTURE CODE SIGNING (Windows): when a certificate or Azure Trusted Signing exists, give
-      # this step the WINDOWS_CERTIFICATE / AZURE_* secrets exactly as release.yml does (in the
+      # this step the WINDOWS_CERTIFICATE / AZURE_* secrets exactly as upstream's release.yml did (in the
       # `release` environment). sign.ps1 then signs lightcraft.exe, lightcraft-cli.exe,
       # kopanod.exe and the MSI. Without them everything is unsigned and Smart App Control
       # blocks it on new PCs.
@@ -130,7 +130,7 @@ jobs:
             . -> target
             kopano-src/research/kopano/lab -> target
       # FUTURE CODE SIGNING (macOS): run packaging/macos/import-cert.sh with the APPLE_* secrets
-      # and pass APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID, as release.yml does. Without them the
+      # and pass APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID, as upstream's release.yml did. Without them the
       # app is ad-hoc signed: Gatekeeper asks people to allow it in System Settings.
       - name: Build and package (DMG)
         run: ubunye/packaging/macos/collab-package.sh kopano-src/research/kopano/lab --arch universal
@@ -150,7 +150,7 @@ jobs:
 
   linux:
     name: Linux x86_64
-    # Oldest hosted image: glibc 2.35, as release.yml.
+    # Oldest hosted image: glibc 2.35, as upstream's release.yml.
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:

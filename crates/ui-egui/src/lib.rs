@@ -13,6 +13,10 @@
 pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/org.ubunye.creative.light.png")),
     accent: Some([0xf2, 0xa5, 0x16]),
+    // Ubunye: never upstream's releases or name (no check runs; see dialogs/updates_ui.rs)
+    name: lightcraft_engine::brand::NAME,
+    repo: "ubunye-ai-ecosystems/ubunye-creative-light",
+    developer: lightcraft_engine::brand::VENDOR,
     ..craft_update::suite::LIGHTCRAFT
 };
 
