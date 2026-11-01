@@ -28,6 +28,11 @@ source = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light"
 issues = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-light/issues"
 upstream = "https://github.com/storytold/lightcraft"
 
+[siblings]
+# Upstream hands photos to PhotoCraft (Photo > Edit In); ours is Ubunye Photo (ubunye-creative-photo).
+photo_app_id = "org.ubunye.creative.photo"
+photo_page = "https://www.thabangvision.com/tools/photo"
+
 [upstream_identity_to_replace]
 names = ["LightCraft", "ArtCraft"]
 app_id = "ai.storyteller.lightcraft"

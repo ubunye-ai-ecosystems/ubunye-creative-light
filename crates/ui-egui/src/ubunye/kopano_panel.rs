@@ -353,7 +353,7 @@ pub fn paint_icon(p: &egui::Painter, r: Rect, color: Color32) {
 pub fn toolbar_button(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(r, egui::Id::new(("top", "collaborate")), Sense::click()).on_hover_text(crate::i18n::tr(TITLE));
-    register(ui.ctx(), "icon:collaborate", r);
+    register(ui, "icon:collaborate", r);
     let color = if resp.hovered() || app.kopano.open { t.text } else { t.icon };
     paint_icon(ui.painter(), r.shrink(5.0), color);
     if resp.clicked() {
@@ -612,7 +612,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             body(app, ui, &state);
         });
     if let Some(r) = shown {
-        register(ctx, "region:collaborate", r.response.rect);
+        crate::widgets::register_geometry(ctx, "region:collaborate", r.response.rect);
     }
     if !open {
         app.kopano.open = false;

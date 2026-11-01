@@ -62,6 +62,13 @@ UPSTREAM = BRAND["links"]["upstream"]
 TAGLINE = f"{NAME}, part of {SUITE}."
 OLD_APP_ID = BRAND["upstream_identity_to_replace"]["app_id"]
 OLD_VENDOR = BRAND["upstream_identity_to_replace"]["vendor"]
+# Windows: the registry key 0.6.0 wrote (remembered install folder), and the suite folder new
+# copies go under (upstream 0.16: Programs\ArtCraft\<App>; ours: Programs\<vendor>\<name>).
+WIN_KEY = f"Software\\{VENDOR}\\{NAME}"
+WIN_SUITE_FOLDER = VENDOR
+# Sibling apps the upstream code hands photos to (Photo ▸ Edit In).
+PHOTO_APP_ID = BRAND["siblings"]["photo_app_id"]
+PHOTO_PAGE = BRAND["siblings"]["photo_page"]
 
 # Our own component GUID for the MSI's main component (upstream's would make Windows Installer treat
 # the two products' files as one shared component). Derived, so it never changes.
@@ -96,7 +103,7 @@ ALLOW_FILES = {
     "crates/engine/src/brand.rs",  # generated: carries the upstream credit link
 }
 TEXT_EXT = {
-    ".rs", ".toml", ".md", ".txt", ".json", ".yml", ".yaml", ".sh", ".ps1", ".xml", ".in", ".wxs",
+    ".rs", ".toml", ".md", ".txt", ".json", ".yml", ".yaml", ".sh", ".ps1", ".xml", ".in", ".wxs", ".wxi",
     ".desktop", ".html", ".js", ".nix", ".plist", ".svg", ".py", ".css", "",
 }
 
@@ -237,14 +244,19 @@ RULES: list[tuple[str, str, str]] = [
      '.join("Library/Application Support").join(crate::brand::APP_ID))'),
     ("crates/engine/src/config.rs", 'PathBuf::from(a).join("LightCraft"))', "PathBuf::from(a).join(crate::brand::APP_ID))"),
     ("crates/engine/src/config.rs", '.map(|c| c.join("lightcraft"))', ".map(|c| c.join(crate::brand::APP_ID))"),
-    ("apps/lightcraft-cli/tests/cli.rs", 'let app_config = config.join("lightcraft");',
+    ("apps/lightcraft-cli/tests/it/cli.rs", 'let app_config = config.join("lightcraft");',
      f"let app_config = config.join({B}::APP_ID);"),
     # desktop app: app id, --version, --help
     ("apps/lightcraft/src/main.rs", 'const APP_ID: &str = "ai.storyteller.lightcraft";', f"const APP_ID: &str = {B}::APP_ID;"),
     ("apps/lightcraft/src/main.rs", 'println!("lightcraft {}", env!("CARGO_PKG_VERSION"));',
      f'println!("lightcraft {{}} ({{}})", env!("CARGO_PKG_VERSION"), {B}::NAME);'),
-    ("apps/lightcraft/src/main.rs", "lightcraft — photo library + raw developer\n",
+    ("apps/lightcraft/src/launch.rs", "lightcraft — photo library + raw developer\n",
      f"lightcraft — {NAME}: photo library + raw developer ({BASED_ON})\n"),
+    # Photo ▸ Edit In: the sibling photo editor is Ubunye Photo (upstream: PhotoCraft)
+    ("apps/lightcraft/src/editors.rs", 'const PHOTOCRAFT_ID: &str = "ai.storyteller.photocraft";',
+     f'const PHOTOCRAFT_ID: &str = "{PHOTO_APP_ID}";'),
+    ("apps/lightcraft/src/editors.rs", "Get it from getartcraft.com/apps/photocraft, or",
+     "Get it from " + PHOTO_PAGE.removeprefix("https://") + ", or"),
     ("apps/lightcraft-cli/src/main.rs", 'println!("lightcraft-cli {}", env!("CARGO_PKG_VERSION"));',
      f'println!("lightcraft-cli {{}} ({{}})", env!("CARGO_PKG_VERSION"), {B}::NAME);'),
     ("apps/lightcraft-cli/src/main.rs", "lightcraft-cli — headless LightCraft (photo library + raw developer)\n",
@@ -277,14 +289,14 @@ RULES: list[tuple[str, str, str]] = [
     ("crates/ui-egui/src/icons.rs", "/// Community chat (opens the ArtCraft Discord): a speech bubble",
      "/// Community chat (opens the questions and ideas page): a speech bubble"),
     # About: the plain-text upstream credit, linking to the upstream repository
-    ("crates/ui-egui/src/panels/dialogs.rs",
-     "                            ui.add_space(10.0);\n                            let discord = egui::Button::new(",
-     "                            ui.label(" + B + "::TAGLINE);\n"
-     "                            let credit = ui.link(" + B + "::BASED_ON).on_hover_text(" + B + "::UPSTREAM);\n"
-     "                            if credit.clicked() {\n"
-     "                                let _ = crate::links::open(app, " + B + "::UPSTREAM);\n"
-     "                            }\n"
-     "                            ui.add_space(10.0);\n                            let discord = egui::Button::new("),
+    ("crates/ui-egui/src/dialogs.rs",
+     "            ui.add_space(10.0);\n            let r = crate::button::Button::new(",
+     "            ui.label(" + B + "::TAGLINE);\n"
+     "            let credit = ui.link(" + B + "::BASED_ON).on_hover_text(" + B + "::UPSTREAM);\n"
+     "            if credit.clicked() {\n"
+     "                let _ = crate::links::open(app, " + B + "::UPSTREAM);\n"
+     "            }\n"
+     "            ui.add_space(10.0);\n            let r = crate::button::Button::new("),
     # packaging: Windows
     ("packaging/windows/lightcraft.wxs", 'UpgradeCode="229BB552-5EFD-479A-BA86-8CB6D926390C"', f'UpgradeCode="{UPGRADE_CODE}"'),
     ("packaging/windows/lightcraft.wxs", 'Guid="8A1D3A39-F7C1-47B1-97AE-40C80BF82F4A"', f'Guid="{COMPONENT_GUID}"'),
@@ -302,10 +314,24 @@ RULES: list[tuple[str, str, str]] = [
      f"<key>CFBundleName</key>\n  <string>{NAME}</string>"),
     ("packaging/macos/Info.plist.in", "<string>Copyright © the LightCraft authors. MIT OR Apache-2.0.</string>",
      f"<string>Copyright © the LightCraft authors and {VENDOR}. MIT OR Apache-2.0.</string>"),
-    ("packaging/macos/Info.plist.in", "<string>LightCraft Document</string>", f"<string>{NAME} Document</string>"),
+    ("packaging/macos/Info.plist.in", "<string>LightCraft asks Photos to import", f"<string>{NAME} asks Photos to import"),
     ("packaging/macos/package.sh", 'APP="$WORK/LightCraft.app"', f'APP="$WORK/{NAME}.app"'),
     ("packaging/macos/package.sh", 'ditto "$APP" "$STAGE/LightCraft.app"', f'ditto "$APP" "$STAGE/{NAME}.app"'),
-    ("packaging/macos/package.sh", '-hfs-volume-name "LightCraft"', f'-hfs-volume-name "{NAME}"'),
+    ("packaging/macos/package.sh", '-volname "LightCraft"', f'-volname "{NAME}"'),
+    # packaging: Windows install policy (upstream 0.16). New copies go under a suite folder named
+    # after the vendor (upstream: ArtCraft); the remembered-folder key is the one 0.6.0 wrote.
+    ("packaging/windows/install-policy.wxi", 'Key="Software\\LightCraft"', f'Key="{WIN_KEY}"'),
+    ("packaging/windows/install-policy.json", '"name": "LightCraft"', f'"name": "{NAME}"'),
+    ("packaging/windows/install-policy.json", '"upgradeCode": "229BB552-5EFD-479A-BA86-8CB6D926390C"', f'"upgradeCode": "{UPGRADE_CODE}"'),
+    ("packaging/windows/install-policy.json", '"Software\\\\LightCraft"', json.dumps(WIN_KEY)),
+    ("packaging/windows/check-install-policy.ps1", '"Software\\$($policy.name)"', '"Software\\' + VENDOR + '\\$($policy.name)"'),
+    ("packaging/windows/test-install-folder.ps1", "Set-TestValue 'Software\\LightCraft' 'InstallFolder'",
+     f"Set-TestValue '{WIN_KEY}' 'InstallFolder'"),
+    (".github/workflows/windows-arm64.yml", "install-relative-path: Programs/ArtCraft/LightCraft",
+     f"install-relative-path: Programs/{VENDOR}/{NAME}"),
+    # packaging: Linux (the ArtCraft launcher's versions folder is not ours to read)
+    ("packaging/linux/flatpak/" + APP_ID + ".yml", "  - --filesystem=xdg-data/ArtCraft/versions:ro\n", ""),
+    ("packaging/linux/flatpak/" + APP_ID + ".bundle.yml", "  - --filesystem=xdg-data/ArtCraft/versions:ro\n", ""),
     # packaging: Linux
     ("packaging/linux/package.sh",
      'export LIGHTCRAFT_MAINTAINER="${LIGHTCRAFT_MAINTAINER:-LightCraft maintainers <lightcraft@storyteller.ai>}"',
@@ -319,8 +345,6 @@ RULES: list[tuple[str, str, str]] = [
      "  # pre-release. A fork's builds point at its own releases through GITHUB_REPOSITORY.\n",
      "  # each AppImage on the Ubunye download server (stable channel). Ubunye: never upstream's releases;\n"
      "  # the release job publishes the .zsync under the fixed name below.\n"),
-    (".github/workflows/release.yml", "--appimage-updateinformation | grep -F 'gh-releases-zsync|'",
-     f"--appimage-updateinformation | grep -F 'zsync|{DOWNLOADS}'"),
     ("packaging/linux/" + APP_ID + ".metainfo.xml.in", '<developer id="ai.storyteller">', '<developer id="org.ubunye">'),
     ("packaging/linux/nfpm.yaml", "  Lightroom users expect.", "  Lightroom users expect. " + BASED_ON + "."),
 ]
@@ -334,7 +358,22 @@ WORD_FILES = [
     "apps/lightcraft-web/index.html",
     "nix/package.nix",
     "flake.nix",
+    "packaging/windows/install-policy.wxi",
+    "packaging/windows/test-install-folder.ps1",
 ]
+
+# Whole-word "ArtCraft" (upstream's suite folder on Windows) -> WIN_SUITE_FOLDER in these files.
+SUITE_FILES = [
+    "packaging/windows/lightcraft.wxs",
+    "packaging/windows/install-policy.wxi",
+    "packaging/windows/check-install-policy.ps1",
+    "packaging/windows/test-install-folder.ps1",
+    "packaging/windows/INSTALLATION.md",
+]
+SUITE_RE = re.compile(r"(?<![A-Za-z0-9_])ArtCraft(?![A-Za-z0-9_])")
+
+# Upstream files this distribution does not carry (translated READMEs full of ArtCraft marks).
+DELETE_FILES = ["README.zh-hans.md", "README.zh-hant.md"]
 
 # Global token replacements (outside the allow-list). Longest first.
 TOKENS: list[tuple[str, str]] = [
@@ -348,6 +387,7 @@ TOKENS: list[tuple[str, str]] = [
     ("https://discord.gg/artcraft", ISSUES),
     ("repos=storytold/lightcraft", "repos=" + SOURCE.removeprefix("https://github.com/")),
     ("github:storytold/lightcraft", "github:" + SOURCE.removeprefix("https://github.com/")),
+    ("ghcr.io/storytold/lightcraft", "ghcr.io/" + SOURCE.removeprefix("https://github.com/")),
     (OLD_APP_ID, APP_ID),
     (OLD_VENDOR, VENDOR),
 ]
@@ -563,7 +603,9 @@ def rebrand_readme(text: str) -> str:
     if HEADER_START in text:
         text = re.sub(re.escape(HEADER_START) + r".*?" + re.escape(HEADER_END) + r"\n*", "", text, flags=re.DOTALL)
     # ArtCraft logos, badges and link bars
-    text = P_BLOCK_RE.sub(lambda m: "" if re.search(r"artcraft|discord", m.group(0), re.I) else m.group(0), text)
+    text = P_BLOCK_RE.sub(lambda m: "" if re.search(r"artcraft|discord|README\.zh-", m.group(0), re.I) else m.group(0), text)
+    text = re.sub(r'^ *<a href="https://coderabbit\.ai">.*\n', "", text, flags=re.MULTILINE)  # badge for upstream's PRs
+    text = text.replace("\\ArtCraft\\", "\\" + WIN_SUITE_FOLDER + "\\")  # Windows install folders
     text = NOTE_RE.sub("", text)
     text = DISCORD_HDR_RE.sub("", text)
     text = CRAFTING_RE.sub(
@@ -683,7 +725,7 @@ def icons(ch: Changes) -> None:
         ch.put(rel, svg)
     ch.put("assets/app-icon/lightcraft-small.svg", small)
     ch.put("assets/app-icon/LICENSE.txt", ICON_LICENSE)
-    for p in sorted((ROOT / "docs" / "brand").glob("artcraft-*")):
+    for p in sorted((ROOT / "docs" / "brand").glob("artcraft-*")) + [ROOT / f for f in DELETE_FILES if (ROOT / f).exists()]:
         ch.changed.append(f"delete {p.relative_to(ROOT).as_posix()}")
         if not ch.check:
             p.unlink()
@@ -771,6 +813,8 @@ def apply_tokens_and_words(ch: Changes, files: list[str]) -> None:
             new = new.replace(old, rep)
         if rel in WORD_FILES:
             new = sub_product(new)
+        if rel in SUITE_FILES:
+            new = SUITE_RE.sub(WIN_SUITE_FOLDER, new)
         if new != text:
             ch.put(rel, new)
 
