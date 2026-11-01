@@ -64,7 +64,8 @@
     </Dialog>
   </UI>
   <InstallUISequence>
-    <Show Dialog="CraftScopeDlg" After="CraftPreferMachineScope" Condition="NOT Installed AND NOT REMOVE AND UILevel = 5" />
+    <!-- Ubunye: no scope page when the package is for everyone only (UBUNYE_MACHINE_SCOPE, lightcraft.wxs) -->
+    <Show Dialog="CraftScopeDlg" After="CraftPreferMachineScope" Condition="NOT Installed AND NOT REMOVE AND UILevel = 5 AND NOT UBUNYE_MACHINE_SCOPE" />
     <!-- Related-product discovery runs once, so full UI must choose its context first. -->
     <FindRelatedProducts After="CraftScopeDlg" />
   </InstallUISequence>

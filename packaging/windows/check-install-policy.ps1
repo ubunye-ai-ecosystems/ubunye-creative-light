@@ -79,7 +79,14 @@ try {
     Write-Output 'PASS Ubunye AI Ecosystems Launcher: per-user scope, suite folder, remembered/custom paths and existing registration. No installation performed.'
     return
   }
-  if ($properties['ALLUSERS'] -ne '2' -or $properties['MSIINSTALLPERUSER'] -ne '1') {
+  # Ubunye: a package carrying ThabangVision collaboration installs for everyone (one shared kopanod, see
+  # packaging/windows/lightcraft.wxs); it says so with UBUNYE_MACHINE_SCOPE and has no scope page.
+  $ubunyeMachine = $properties['UBUNYE_MACHINE_SCOPE'] -eq '1'
+  if ($ubunyeMachine) {
+    if ($properties['ALLUSERS'] -ne '1' -or $properties.ContainsKey('MSIINSTALLPERUSER')) {
+      throw 'Ubunye collaboration packages must install for everyone (ALLUSERS=1, not per user).'
+    }
+  } elseif ($properties['ALLUSERS'] -ne '2' -or $properties['MSIINSTALLPERUSER'] -ne '1') {
     throw 'Policy regression: new packages must default to the per-user dual-scope context.'
   }
   if ($properties['UpgradeCode'].Trim('{}') -ne $policy.upgradeCode) { throw 'The existing upgrade identity must not change.' }
@@ -352,7 +359,11 @@ try {
     }
   }
   $registry = @(Read-Rows $database 'SELECT `Root`, `Key`, `Name`, `Value` FROM `Registry`' 4)
-  if (@($registry | Where-Object { $_[0] -in '1', '2' }).Count) { throw 'Registration must follow the selected context, not force HKCU or HKLM.' }
+  # Ubunye: the one machine-wide row a collaboration package may force is kopanod's start at sign-in
+  # (HKLM Run, shared by every Ubunye app; ubunye/packaging/windows/collab.wxs).
+  $forced = @($registry | Where-Object { $_[0] -in '1', '2' } | Where-Object {
+      -not ($ubunyeMachine -and $_[0] -eq '2' -and $_[1] -eq 'Software\Microsoft\Windows\CurrentVersion\Run' -and $_[2] -eq 'ThabangVision collaboration') })
+  if ($forced.Count) { throw 'Registration must follow the selected context, not force HKCU or HKLM.' }
   if (@($registry | Where-Object { $_[0] -eq '0' -and $_[1] -match '^Software\\Classes(\\|$)' }).Count) {
     throw 'HKCR keys must be relative to Classes.'
   }
