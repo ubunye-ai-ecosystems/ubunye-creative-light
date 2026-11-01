@@ -66,13 +66,14 @@ pub(crate) fn blocks_input(app: &LightcraftApp) -> bool {
 }
 
 pub(crate) fn check(app: &mut LightcraftApp) -> Result<Value, String> {
+    // Ubunye: builds come from our download page, not GitHub releases. craft-update only knows
+    // upstream's GitHub releases and upstream's app ids, so Check for Updates opens the page.
     #[cfg(not(target_arch = "wasm32"))]
     {
-        app.updates_rt.check_requested = true;
         if let Some(ctx) = &app.updates_rt.repaint {
             ctx.request_repaint();
         }
-        Ok(Value::Null)
+        crate::links::open(app, lightcraft_engine::brand::DOWNLOADS)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -170,6 +171,24 @@ mod tests {
             assert!(!rt.updater.prompt_open());
             assert_eq!(rt.updater.status(), &Status::Idle);
         }
+    }
+
+    /// Ubunye: Check for Updates opens our download page and starts no GitHub check.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn check_for_updates_opens_the_download_page() {
+        let mut app = LightcraftApp::new(Session::new(), Default::default());
+        let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let o = opened.clone();
+        app.services.open_url = Some(Box::new(move |u: &str| {
+            o.lock().unwrap().push(u.to_string());
+            Ok(())
+        }));
+        check(&mut app).unwrap();
+        assert_eq!(opened.lock().unwrap().as_slice(), [lightcraft_engine::brand::DOWNLOADS]);
+        assert!(lightcraft_engine::brand::DOWNLOADS.starts_with("https://downloads.thabangvision.com/"));
+        assert!(!app.updates_rt.check_requested);
+        assert!(!app.updates_rt.startup_check);
     }
 
     #[test]
