@@ -5,7 +5,7 @@ name: ubunye-panel-tests
 on:
   workflow_dispatch: {}
   push:
-    branches: [feature/kopano-installers]
+    branches: [develop, feature/kopano-installers, "sync/**"]
     paths: ["crates/**", "apps/**", "Cargo.lock", ".github/workflows/ubunye-panel-tests.yml"]
 permissions:
   contents: read
