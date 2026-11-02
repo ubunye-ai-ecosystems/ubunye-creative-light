@@ -1,7 +1,15 @@
 # Upstream files modified by Ubunye (one path per line). Used for conflict-hotspot reports.
 # Regenerated after the v0.16 merge (2026-11-01): every upstream file this tree modifies or deletes, plus
 # upstream files we carry under a new name (the app-id renames) and the generated brand module.
+# Deleted on purpose (upstream-only CI, release and bot config; owner rule 2026-11-01): the .github entries and .coderabbit.yaml below.
+.coderabbit.yaml
+.github/dependabot.yml
+.github/workflows/ci.yml
+.github/workflows/freebsd.yml
+.github/workflows/nix.yml
+.github/workflows/packaging-lint.yml
 .github/workflows/release.yml
+.github/workflows/sonarcloud.yml
 .github/workflows/windows-arm64.yml
 AGENTS.md
 apps/lightcraft/build.rs

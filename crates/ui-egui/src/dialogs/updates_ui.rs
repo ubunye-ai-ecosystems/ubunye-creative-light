@@ -67,13 +67,13 @@ pub(crate) fn blocks_input(app: &LightcraftApp) -> bool {
 
 pub(crate) fn check(app: &mut LightcraftApp) -> Result<Value, String> {
     // Ubunye: builds come from our download page, not GitHub releases. craft-update only knows
-    // upstream's GitHub releases and upstream's app ids, so Check for Updates opens the page.
+    // upstream's GitHub releases and upstream's app ids, so Check for Updates opens the product page.
     #[cfg(not(target_arch = "wasm32"))]
     {
         if let Some(ctx) = &app.updates_rt.repaint {
             ctx.request_repaint();
         }
-        crate::links::open(app, lightcraft_engine::brand::DOWNLOADS)
+        crate::links::open(app, lightcraft_engine::brand::HOMEPAGE)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -173,10 +173,10 @@ mod tests {
         }
     }
 
-    /// Ubunye: Check for Updates opens our download page and starts no GitHub check.
+    /// Ubunye: Check for Updates opens our product page and starts no GitHub check.
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn check_for_updates_opens_the_download_page() {
+    fn check_for_updates_opens_the_product_page() {
         let mut app = LightcraftApp::new(Session::new(), Default::default());
         let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let o = opened.clone();
@@ -185,10 +185,22 @@ mod tests {
             Ok(())
         }));
         check(&mut app).unwrap();
-        assert_eq!(opened.lock().unwrap().as_slice(), [lightcraft_engine::brand::DOWNLOADS]);
-        assert!(lightcraft_engine::brand::DOWNLOADS.starts_with("https://downloads.thabangvision.com/"));
+        assert_eq!(opened.lock().unwrap().as_slice(), [lightcraft_engine::brand::HOMEPAGE]);
+        assert_eq!(lightcraft_engine::brand::HOMEPAGE, "https://www.thabangvision.com/tools/light");
         assert!(!app.updates_rt.check_requested);
         assert!(!app.updates_rt.startup_check);
+    }
+
+    /// Ubunye: nothing the updater knows points at upstream's repositories or names.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn update_checks_never_target_upstream() {
+        let a = &crate::UPDATE_APP;
+        assert!(!a.repo.to_lowercase().starts_with("storytold/"), "{}", a.repo);
+        assert_eq!(a.repo, "ubunye-ai-ecosystems/ubunye-creative-light");
+        assert!(!a.releases_url().contains("storytold"));
+        assert_eq!(a.name, lightcraft_engine::brand::NAME);
+        assert_eq!(a.developer, lightcraft_engine::brand::VENDOR);
     }
 
     #[test]
