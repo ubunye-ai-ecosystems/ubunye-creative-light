@@ -8,8 +8,6 @@ name: ubunye-live-smoke
 
 on:
   workflow_dispatch: {}
-  push:   # TEMPORARY while the branch is tried; removed before merge
-    branches: [ubunye/live-smoke]
   workflow_run:
     workflows: [ubunye-release]
     types: [completed]
