@@ -57,8 +57,8 @@ APPS = {
         "repo": "ubunye-ai-ecosystems/ubunye-creative-light",
         "upstream_app_id": "ai.storyteller.lightcraft",
         "upstream_words": ["LightCraft", "ArtCraft", "storytold", "getartcraft"],
-        # the credit the brand requires (README, About, --help): allowed
-        "credit": "Based on LightCraft by the ArtCraft team",
+        # credits the licence and brand require (About, --help, copyright lines): allowed
+        "credits": ["Based on LightCraft by the ArtCraft team", "the LightCraft authors"],
         "win_key": r"Software\Ubunye AI Ecosystems\Ubunye Light",
         "mac_bundle": "Ubunye Light.app",
         "mac_exe": "LightCraft",
@@ -155,7 +155,9 @@ def download_live(app: str, work: Path) -> tuple[dict, dict[str, Path]]:
 
 
 def no_upstream_in_text(cfg: dict, text: str, where: str) -> None:
-    cleaned = text.replace(cfg["credit"], "")
+    cleaned = text
+    for credit in cfg["credits"]:
+        cleaned = cleaned.replace(credit, "")
     # case-sensitive: the binaries keep upstream's lower-case names (`lightcraft`, `lightcraft-cli`)
     found = [w for w in cfg["upstream_words"] if w in cleaned]
     check(not found, f"no upstream names in {where}", ", ".join(found))
@@ -379,7 +381,8 @@ def light_macos(cfg: dict, latest: dict, files: dict, imgs: dict, out: Path, env
     check(info.get("CFBundleShortVersionString") == version, "bundle version = latest.json", str(info.get("CFBundleShortVersionString")))
     check(info.get("CFBundleDisplayName") == cfg["name"], "bundle display name", str(info.get("CFBundleDisplayName")))
     shown = {k: v for k, v in info.items() if isinstance(v, str) and k not in ("CFBundleExecutable", "CFBundleIconFile")}
-    no_upstream_in_text(cfg, json.dumps(shown), "Info.plist (what Finder and macOS show)")
+    for k, val in shown.items():
+        no_upstream_in_text(cfg, val, f"Info.plist {k}")
     exe = app / "Contents" / "MacOS" / cfg["mac_exe"]
     v = run([exe, "--version"], env=env).stdout
     check(version in v and cfg["name"] in v, "app --version", v.strip())
@@ -429,6 +432,8 @@ RUNNERS = {"light": {"linux": light_linux, "windows": light_windows, "macos": li
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):  # Windows consoles default to cp1252
+        stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--app", required=True, choices=sorted(APPS))
     ap.add_argument("--out", required=True)
