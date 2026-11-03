@@ -32,12 +32,12 @@ jobs:
     steps:
       - id: app-token
         if: vars.UBUNYE_SYNC_APP_ID != ''
-        uses: actions/create-github-app-token@v1   # TODO(M2): pin by SHA
+        uses: actions/create-github-app-token@v3   # TODO(M2): pin by SHA
         with:
           app-id: ${{ vars.UBUNYE_SYNC_APP_ID }}
           private-key: ${{ secrets.UBUNYE_SYNC_APP_KEY }}
 
-      - uses: actions/checkout@v4   # TODO(M2): pin by SHA
+      - uses: actions/checkout@v7   # TODO(M2): pin by SHA
         with:
           ref: develop
           fetch-depth: 0

@@ -11,7 +11,7 @@ jobs:
   deny:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      - uses: actions/checkout@v7            # TODO(M2): pin by SHA
       - uses: EmbarkStudios/cargo-deny-action@v2   # TODO(M2): pin by SHA
         with:
           command: check advisories licenses sources bans
