@@ -7,17 +7,17 @@
     "branch": "main",
     "license": "MIT OR Apache-2.0"
   },
-  "last_checked_at": "2026-11-01T12:00:00Z",
+  "last_checked_at": "2026-11-02T12:00:00Z",
   "last_integrated": {
-    "sha": "07301cbd1e1cab5c152228891d9c9ed87e263003",
-    "date": "2026-10-31T23:42:58-04:00",
-    "upstream_version": "0.16.0",
-    "upstream_tag": "v0.16.0",
-    "upstream_describe": "v0.16.0-641-g07301cbd",
+    "sha": "0fad22a286c10b39afab2f5a6ac688b48bb30c8e",
+    "date": "2026-11-01T22:39:34-05:00",
+    "upstream_version": "0.17.0",
+    "upstream_tag": "v0.17.0",
+    "upstream_describe": "v0.17.0-18-g0fad22a",
     "method": "merge",
-    "merged_pr": 9,
-    "merged_by": "LeparaLaMapara",
-    "merged_at": "2026-11-01T13:52:53Z"
+    "merged_pr": null,
+    "merged_by": null,
+    "merged_at": null
   },
   "pending": null,
   "history": [
@@ -40,6 +40,16 @@
       "note": "branch sync/upstream-v0.16; 44 brand-only conflicts taken from upstream and re-branded by ubunye/brand/apply.py, 17 with Ubunye changes re-applied by hand",
       "merged_pr": 9,
       "merge_commit": "df67e43bf306685e831a489713a5527173143619"
+    },
+    {
+      "sha": "0fad22a286c10b39afab2f5a6ac688b48bb30c8e",
+      "outcome": "merge",
+      "commits": 20,
+      "conflicts": 3,
+      "conflict_hunks": 33,
+      "ci": "pending",
+      "recorded_at": "2026-11-02T12:00:00Z",
+      "note": "branch sync/upstream-2026-11-02; conflicts were workspace version lines (Cargo.toml, Cargo.lock) and README; kept ours; bumped 0.7.2 to 0.7.3 (crates changed)"
     }
   ]
 }
