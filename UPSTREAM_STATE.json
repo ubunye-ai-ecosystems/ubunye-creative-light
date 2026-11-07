@@ -7,13 +7,13 @@
     "branch": "main",
     "license": "MIT OR Apache-2.0"
   },
-  "last_checked_at": "2026-11-02T12:00:00Z",
+  "last_checked_at": "2026-11-07T12:00:00Z",
   "last_integrated": {
-    "sha": "0fad22a286c10b39afab2f5a6ac688b48bb30c8e",
-    "date": "2026-11-01T22:39:34-05:00",
-    "upstream_version": "0.17.0",
-    "upstream_tag": "v0.17.0",
-    "upstream_describe": "v0.17.0-18-g0fad22a",
+    "sha": "de096566ff7a9607a2933c5135e79a83f555ecbf",
+    "date": "2026-11-07T16:21:33+01:00",
+    "upstream_version": "0.18.0",
+    "upstream_tag": "v0.18.0",
+    "upstream_describe": "v0.18.0-289-gde096566",
     "method": "merge",
     "merged_pr": null,
     "merged_by": null,
@@ -50,6 +50,15 @@
       "ci": "pending",
       "recorded_at": "2026-11-02T12:00:00Z",
       "note": "branch sync/upstream-2026-11-02; conflicts were workspace version lines (Cargo.toml, Cargo.lock) and README; kept ours; bumped 0.7.2 to 0.7.3 (crates changed)"
+    },
+    {
+      "sha": "de096566ff7a9607a2933c5135e79a83f555ecbf",
+      "outcome": "merge",
+      "commits": 313,
+      "conflicts": 28,
+      "ci": "pending",
+      "recorded_at": "2026-11-07T12:00:00Z",
+      "note": "branch sync/upstream-2026-11-07 (includes the unmerged sync/upstream-2026-11-02 work); conflicts were Ubunye brand strings (re-applied with brand/apply.py), kopano wiring, workflows and version lines; upstream ci.yml/release.yml/ci-windows.yml/house-rules.yml dropped; bumped 0.7.3 to 0.7.4 (crates changed)"
     }
   ]
 }
