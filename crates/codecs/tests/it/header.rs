@@ -13,16 +13,20 @@ fn meta(exif: &Option<Vec<u8>>) -> EncodeMeta<'_> {
     EncodeMeta { exif: exif.as_deref(), xmp: Some("<x/>"), ..Default::default() }
 }
 
-/// A TIFF with an Orientation tag (`encode_tiff` writes none), via the `tiff` crate's encoder.
+/// A TIFF with an Orientation tag (`encode_tiff` writes none), via `craft-tiff`.
 fn tiff_oriented(img: &Rgba8, orientation: u16) -> Vec<u8> {
-    use tiff::encoder::{TiffEncoder, colortype};
     let rgb: Vec<u8> = img.data.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
-    let mut cur = std::io::Cursor::new(Vec::new());
-    let mut enc = TiffEncoder::new(&mut cur).unwrap();
-    let mut im = enc.new_image::<colortype::RGB8>(img.width as u32, img.height as u32).unwrap();
-    im.encoder().write_tag(tiff::tags::Tag::Orientation, orientation).unwrap();
-    im.write_data(&rgb).unwrap();
-    cur.into_inner()
+    let mut ifd = craft_tiff::IfdBuilder::new()
+        .with(craft_tiff::tags::IMAGE_WIDTH, craft_tiff::Value::Long(vec![img.width as u32]))
+        .with(craft_tiff::tags::IMAGE_LENGTH, craft_tiff::Value::Long(vec![img.height as u32]))
+        .with(craft_tiff::tags::BITS_PER_SAMPLE, craft_tiff::Value::Short(vec![8, 8, 8]))
+        .with(craft_tiff::tags::COMPRESSION, craft_tiff::Value::Short(vec![1]))
+        .with(craft_tiff::tags::PHOTOMETRIC, craft_tiff::Value::Short(vec![2]))
+        .with(craft_tiff::tags::SAMPLES_PER_PIXEL, craft_tiff::Value::Short(vec![3]))
+        .with(craft_tiff::tags::PLANAR_CONFIGURATION, craft_tiff::Value::Short(vec![1]))
+        .with(craft_tiff::tags::ORIENTATION, craft_tiff::Value::Short(vec![orientation]));
+    ifd.set_image(craft_tiff::ImageData::Strips { rows_per_strip: img.height as u32, strips: vec![rgb] });
+    craft_tiff::TiffWriter::new(craft_tiff::ByteOrder::Little, false).write(&[ifd]).unwrap()
 }
 
 /// A minimal 8-bit RGB PSD (raw or PackBits-literal merged data) with an EXIF resource.
@@ -99,8 +103,8 @@ fn fixtures(w: usize, h: usize) -> Vec<(String, Vec<u8>)> {
     }
     out.push(("tiff lzw".into(), encode_tiff(&e, TiffCompression::Lzw, &EncodeMeta::default()).unwrap()));
     out.push(("tiff packbits".into(), encode_tiff(&e, TiffCompression::PackBits, &EncodeMeta::default()).unwrap()));
-    let mut bmp = Vec::new();
-    image::codecs::bmp::BmpEncoder::new(&mut bmp).encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8).unwrap();
+    let bmp_img = craft_image_codecs::Image::from_u8(w as u32, h as u32, craft_image_codecs::ChannelLayout::Rgb, rgb).unwrap();
+    let bmp = craft_image_codecs::encode(&bmp_img, craft_image_codecs::Format::Bmp, &craft_image_codecs::EncodeOptions::default()).unwrap();
     out.push(("bmp".into(), bmp));
     out
 }
@@ -208,6 +212,10 @@ fn samsung_sef_trailer_without_eoi() {
     assert_eq!(full.image.data, reference.image.data, "the same pixels as the file with its EOI");
     let small = decode(&pano, DecodeOptions::fit(32, 32)).unwrap();
     assert_eq!((small.source_width, small.source_height), (160, 96));
+    // the fast display decode too, scaled (where the trailer after the scan used to fail it)
+    let (fit, _) = lightcraft_codecs::decode_jpeg_srgb8_fit(&pano, 32, 32).unwrap().unwrap();
+    let (fit_ref, _) = lightcraft_codecs::decode_jpeg_srgb8_fit(&jpeg, 32, 32).unwrap().unwrap();
+    assert_eq!((fit.width, fit.height, &fit.data), (fit_ref.width, fit_ref.height, &fit_ref.data));
     // an FF D9 inside the SEF data is not the image's end
     let eoi_in_data = sef_file(scan, block, b"SEFH", 0x08E0, &[0xFF, 0xC0, 0, 0x11, 0xFF, 0xD9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], None);
     assert_eq!(read_header(&eoi_in_data).unwrap().width, 160);
