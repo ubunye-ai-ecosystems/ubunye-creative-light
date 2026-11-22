@@ -7,17 +7,17 @@
     "branch": "main",
     "license": "MIT OR Apache-2.0"
   },
-  "last_checked_at": "2026-11-01T12:00:00Z",
+  "last_checked_at": "2026-11-21T22:00:00Z",
   "last_integrated": {
-    "sha": "07301cbd1e1cab5c152228891d9c9ed87e263003",
-    "date": "2026-10-31T23:42:58-04:00",
-    "upstream_version": "0.16.0",
-    "upstream_tag": "v0.16.0",
-    "upstream_describe": "v0.16.0-641-g07301cbd",
+    "sha": "1a81a5a2673b5ef416927a94cf75a28fd5ceae37",
+    "date": "2026-11-22T03:36:02+07:00",
+    "upstream_version": "0.18.0",
+    "upstream_tag": "v0.18.0",
+    "upstream_describe": "v0.18.0-809-g1a81a5a2",
     "method": "merge",
-    "merged_pr": 9,
-    "merged_by": "LeparaLaMapara",
-    "merged_at": "2026-11-01T13:52:53Z"
+    "merged_pr": null,
+    "merged_by": null,
+    "merged_at": null
   },
   "pending": null,
   "history": [
@@ -40,6 +40,28 @@
       "note": "branch sync/upstream-v0.16; 44 brand-only conflicts taken from upstream and re-branded by ubunye/brand/apply.py, 17 with Ubunye changes re-applied by hand",
       "merged_pr": 9,
       "merge_commit": "df67e43bf306685e831a489713a5527173143619"
+    },
+    {
+      "sha": "6b2b7e6d1117e683a1701568e56f979d061e4699",
+      "outcome": "merge",
+      "commits": 457,
+      "conflicts": 37,
+      "conflict_hunks": null,
+      "ci": "pending",
+      "recorded_at": "2026-11-14T00:00:00Z",
+      "note": "branch sync/upstream-2026-11-14; upstream CI/house-rules workflows dropped; brand re-applied by apply.py; updater still ours; Ubunye 0.7.3",
+      "merged_pr": null
+    },
+    {
+      "sha": "1a81a5a2673b5ef416927a94cf75a28fd5ceae37",
+      "outcome": "merge",
+      "commits": 833,
+      "conflicts": 8,
+      "conflict_hunks": null,
+      "ci": "pending",
+      "recorded_at": "2026-11-21T22:00:00Z",
+      "note": "branch sync/upstream-2026-11-21, built on the unmerged sync/upstream-2026-11-14 (PR 22, green); upstream infra dropped; updater still ours; Ubunye 0.7.3",
+      "merged_pr": null
     }
   ]
 }

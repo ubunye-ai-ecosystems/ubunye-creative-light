@@ -29,16 +29,18 @@ pub mod dialogs;
 pub mod docking;
 mod drop_overlay;
 pub mod export_task;
+mod find_similar;
 mod focus_scan;
 mod frame_rate;
 pub mod headless;
 pub mod i18n;
 pub mod icons;
+pub mod lens_db;
 pub mod lightroom_import;
 pub mod links;
+pub mod loupe_timing;
 pub mod menus;
 mod missing_sweep;
-mod model_setup;
 pub mod panels;
 pub mod pick;
 pub mod recheck;
@@ -49,6 +51,7 @@ pub mod shortcuts;
 pub mod sidebar;
 pub mod softpaint;
 pub mod space_hand;
+pub mod startup;
 pub mod state;
 pub mod sync;
 pub mod tasks;
@@ -91,6 +94,7 @@ pub use widgets::rating;
 pub use widgets::text_field;
 
 mod app;
+mod auto_settings;
 mod caches;
 mod clock;
 mod services;
@@ -98,6 +102,7 @@ mod services;
 #[cfg(test)]
 use app::{import_tick_allowed, sam_download_ended, shot_ready};
 pub(crate) use caches::key_of;
+use caches::{AlbumCounts, AlbumRecount};
 pub use caches::{FilterValues, LibraryCounts, RulesView};
 use clock::AppClock;
 pub use clock::{monotonic_ms, now_ms};
@@ -149,7 +154,6 @@ impl QuitPrompt {
 }
 
 pub struct LightcraftApp {
-    pub(crate) model_setup: model_setup::Pending,
     /// Per-catalog-revision caches of library-wide results the panels show every frame
     /// (expensive on big libraries).
     pub caches: Caches,
@@ -206,6 +210,9 @@ pub struct LightcraftApp {
     /// The language already sent to `Context::set_language`, so a logic pass does not allocate a
     /// `String` just to compare it.
     accesskit_language: Option<String>,
+    /// The selection last seen ([`LightcraftApp::selection_changes`]) and how many times it was
+    /// seen to differ from the one before.
+    selection_seen: (u64, u64),
     /// When playback was auto-paused because the window became hidden (`None`: it is running, or
     /// the user paused it). On unhide the pause is lifted and the slide keeps its remaining time.
     slideshow_hidden_at: Option<f64>,
@@ -227,6 +234,9 @@ pub struct LightcraftApp {
     /// effects (which the global shortcut guard also hides).
     #[cfg(test)]
     pub(crate) library_passes: Vec<panels::library_problem::LibraryPass>,
+    /// Test-only: how many times background preparation was advanced (once per logic pass).
+    #[cfg(test)]
+    pub(crate) prep_ticks: u32,
     /// Test-only: a delay for the sidebar's Missing Photos count worker (a slow disk). Kept here,
     /// not in `ui`, because `ui.set` rebuilds `ui` and would drop it.
     #[cfg(test)]
@@ -293,6 +303,14 @@ pub struct LightcraftApp {
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
     /// "thumb", "none").
     pub loupe_shown: Option<(lightcraft_catalog::PhotoId, &'static str)>,
+    /// When each photo stepped to in the loupe first showed (`ui.inspect` → `perf.loupeSteps`).
+    pub loupe_timing: loupe_timing::LoupeTiming,
+    /// The app-wide background preparation settings were handed from the saved app settings to
+    /// the session ([`Self::background_prep`]).
+    prep_synced: bool,
+    /// The loupe's look-ahead: the photo it was made for, the direction of travel (+1 / -1), the
+    /// catalog revision and the edge, so it is worked out again only when one of them changes.
+    pub(crate) look_ahead: panels::detail::LookAhead,
     /// The window render the loupe asked for last, by job key (see [`region`]); kept for the few
     /// windows whose textures can be on screen, and for the inspector.
     pub region_view: Option<region::RegionView>,
@@ -312,12 +330,17 @@ pub struct LightcraftApp {
     pub(crate) compare_tiles: std::collections::HashMap<(u8, u64), region::RegionView>,
     /// Until when (s) a pinch or scroll in Compare / Reference holds the windows there are.
     pub(crate) compare_hold_until: f64,
+    /// Survey tiles gliding to new cells, and the render slot each surveyed photo keeps.
+    pub(crate) survey_motion: panels::compare::survey::SurveyMotion,
     /// Photo Merge dialog previews and background merges.
     pub merge: merge::MergeState,
     /// An import in progress (the import review dialog's batches).
     pub import: Option<import::ImportTask>,
     /// A folder scan in progress (feeds the import review).
     pub scan: Option<import::ScanTask>,
+    /// Scans stopped without waiting for their workers: each channel is kept until its worker ends, so
+    /// the probes it took from the session come back.
+    pub(crate) scans_stopping: import::StoppingScans,
     /// Files that waited for a library and wait for the running import or Synchronize Folder too.
     pub waiting_import: panels::library_problem::WaitingImport,
     /// A Synchronize Folder scan in progress (feeds its dialog).
@@ -354,8 +377,18 @@ pub struct LightcraftApp {
     /// Say once, when the GPU device has been tried, that no graphics processor was found
     /// ([`panels::notices::gpu_notice`]). The desktop app sets it; headless sessions and tests don't.
     pub gpu_notice: bool,
+    /// Tell the user once per session when the drive holding the preview cache runs low
+    /// ([`panels::notices::disk_space_notice`]). The desktop app sets it; headless sessions and tests
+    /// don't (their drive is whatever the machine has).
+    pub disk_space_notice: bool,
+    /// The low-disk notice's text while it is queued in [`LightcraftApp::notices`]: it is shown with a
+    /// button to Settings ▸ Performance. With the library it was raised for
+    /// ([`lightcraft_engine::Session::library_generation`]): another library open drops it.
+    pub(crate) disk_notice: Option<(u64, String)>,
     /// The memory budget setting last applied (MB, 0 = automatic).
     memory_applied: Option<u32>,
+    /// The hot pixel limit last applied (percent).
+    hot_pixels_applied: Option<f32>,
     /// The display profile setting last applied (`app.displayProfile`).
     pub(crate) display_applied: Option<String>,
     /// Why the display profile setting could not be applied (shown in Settings ▸ Display).
@@ -553,7 +586,7 @@ pub fn is_model_file(path: &str) -> bool {
 /// Files dropped on the window that are presets rather than photos.
 pub fn is_preset_file(path: &str) -> bool {
     let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    ["lcpreset", "lrtemplate", "xmp", "zip", "cube", "lmp", "mplumpack", "lceffect"].contains(&ext.as_str())
+    ["lcpreset", "lrtemplate", "xmp", "zip", "cube", "dcp", "lmp", "mplumpack", "lceffect"].contains(&ext.as_str())
 }
 
 /// Splits dropped files into presets and everything else. An `.xmp` dropped next to a photo with the same
@@ -603,10 +636,12 @@ pub struct Caches {
     counts: Option<(u64, LibraryCounts)>,
     date_groups: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::DateGroup>>)>,
     filter_values: Option<(u64, std::sync::Arc<FilterValues>)>,
-    /// The albums' counts: the minute they are of (while a smart album asks about "the last N days"), the tally
-    /// that follows edits, and the counts as the panels take them.
-    album_counts:
-        Option<(String, lightcraft_catalog::tally::AlbumTally, std::sync::Arc<std::collections::HashMap<lightcraft_catalog::AlbumId, usize>>)>,
+    /// The albums' counts as the sidebar shows them, with the tally that follows edits.
+    album_counts: Option<AlbumCounts>,
+    /// A count of every photo running off the UI thread; the counts above are shown until it is done.
+    album_recount: Option<AlbumRecount>,
+    /// The library, catalog revision and minute a count of every photo failed at: not tried again until one changes.
+    album_recount_failed: Option<(u64, u64, String)>,
     /// How often the album counts were made from every photo (tests check that unchanged frames, and edits to a
     /// photo or a few, don't).
     pub album_count_scans: usize,

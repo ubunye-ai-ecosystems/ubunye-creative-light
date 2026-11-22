@@ -236,6 +236,7 @@
   "Added “{keyword}” to {n} photo{}": "“{keyword}” ditambahkan ke {n} foto{:.0}",
   "Add Keyword “{keywords}”": "Tambahkan kata kunci “{keywords}”",
   "On {have} of {of} selected photos": "Pada {have} dari {of} foto yang dipilih",
+  "A keyword name can't end with an asterisk: “{name}”": "Nama kata kunci tidak boleh diakhiri tanda bintang: “{name}”",
   "Remove “{name}”": "Hapus “{name}”",
   "There is a keyword set “{name}” already": "Set kata kunci “{name}” sudah ada",
   "Added {n} keyword{}": "{n} kata kunci ditambahkan{:.0}",
@@ -320,5 +321,10 @@
   "{name} is installed and in use: face recognition is on": "{name} sudah terinstal dan digunakan: pengenalan wajah aktif",
   "Creates {stacks} stack{} from {photos} of {scope}": "Membuat {stacks} tumpukan dari {photos} foto ({scope}){:.0}",
   "{n} selected photo{} · {pages} page{}": "{n} foto dipilih · {pages} halaman{:.0}{:.0}",
-  "{n} photo{} in view · {slides} slide{} · {time}": "{n} foto di tampilan · {slides} slide · {time}{:.0}{:.0}"
+  "{n} photo{} in view · {slides} slide{} · {time}": "{n} foto di tampilan · {slides} slide · {time}{:.0}{:.0}",
+  "Bring photos in with File › Import Photos… ({keys}).": "Masukkan foto melalui File › Impor foto… ({keys}).",
+  "View › Detail View ({keys}).": "Tampilan › Tampilan Detail ({keys}).",
+  "File › Export… · File › Print… ({keys}).": "File › Ekspor… · File › Cetak… ({keys}).",
+  "{n} folder{} could not be read": "Folder yang tidak bisa dibaca: {n}{:.0}",
+  "{n} file{} skipped (not a supported photo type)": "File yang dilewati (bukan jenis foto yang didukung): {n}{:.0}"
 }
